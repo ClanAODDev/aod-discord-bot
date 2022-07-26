@@ -9,10 +9,13 @@ Recommend using Linux or WSL.
 - [Docker compose](https://docs.docker.com/compose/install/)
     - Note: that this is installed easiest for WSL using [Docker desktop](https://docs.docker.com/desktop/windows/wsl/)
 
+- schema file, which will be supplied to anyone approved to work on this
+
 ## Running
+
 The db can be run from the root directory using
 ```bash
-docker-compose -f ./infra/db/docker-compose.yml up
+docker-compose -f ./docker/docker-compose.yml up
 ```
 or by running
 ```bash
