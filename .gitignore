@@ -1,2 +1,3 @@
 aod-discord-bot.config.json
 *.sql
+node_modules
