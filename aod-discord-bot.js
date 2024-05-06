@@ -384,21 +384,24 @@ function getPermissionLevelForMember(member) {
 		perm = PERM_OWNER;
 	else {
 		//FIXME very inefficient
-		if (member.roles.cache.find(r => config.adminRoles.includes(r.name)))
-			perm = PERM_ADMIN;
-		else if (member.roles.cache.find(r => config.staffRoles.includes(r.name)))
-			perm = PERM_STAFF;
-		else if (member.roles.cache.find(r => config.divisionCommandRoles.includes(r.name)))
-			perm = PERM_DIVISION_COMMANDER;
-		else if (member.roles.cache.find(r => config.modRoles.includes(r.name)))
-			perm = PERM_MOD;
-		else if (member.roles.cache.find(r => r.name.endsWith('Officer')) ||
-			member.roles.cache.find(r => config.recruiterRoles.includes(r.name)))
-			perm = PERM_RECRUITER;
-		else if (member.roles.cache.find(r => r.name == config.memberRole))
-			perm = PERM_MEMBER;
-		else if (member.roles.cache.find(r => r.name == config.guestRole))
-			perm = PERM_GUEST;
+		const roleChecks = [
+		    { roles: config.adminRoles, permission: PERM_ADMIN },
+		    { roles: config.staffRoles, permission: PERM_STAFF },
+		    { roles: config.divisionCommandRoles, permission: PERM_DIVISION_COMMANDER },
+		    { roles: config.modRoles, permission: PERM_MOD },
+		    { roles: ['Officer'].concat(config.recruiterRoles), permission: PERM_RECRUITER },
+		    { roles: [config.memberRole], permission: PERM_MEMBER },
+		    { roles: [config.guestRole], permission: PERM_GUEST }
+		];
+		
+		let perm = PERM_GUEST;
+		
+		for (const roleCheck of roleChecks) {
+		    if (roleCheck.roles.some(role => member.roles.cache.has(role))) {
+		        perm = roleCheck.permission;
+		        break;
+		    }
+		}
 	}
 	return [perm, getStringForPermission(perm)];
 }
