@@ -145,7 +145,8 @@ messageRouter.post('/:message_id/react', async (req, res, next) => {
 					return;
 				}
 				await req.message.reactions.removeAll();
-			} else if (reaction && reaction.users.resolve(global.client.user.id)) {
+			}
+			if (reaction && reaction.users.resolve(global.client.user.id)) {
 				await reaction.users.remove(global.client.user.id).catch(() => {});
 			} else {
 				reaction = await req.message.react(emojiId).catch((err) => {});
