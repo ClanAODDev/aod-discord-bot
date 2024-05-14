@@ -112,6 +112,16 @@ const PERM_MEMBER = 2;
 const PERM_GUEST = 1;
 const PERM_NONE = 0;
 
+const roleChecks = [
+	{ roles: config.adminRoles, permission: PERM_ADMIN },
+	{ roles: config.staffRoles, permission: PERM_STAFF },
+	{ roles: config.divisionCommandRoles, permission: PERM_DIVISION_COMMANDER },
+	{ roles: config.modRoles, permission: PERM_MOD },
+	{ roles: ['Officer'].concat(config.recruiterRoles), permission: PERM_RECRUITER },
+	{ roles: [config.memberRole], permission: PERM_MEMBER },
+	{ roles: [config.guestRole], permission: PERM_GUEST }
+];
+
 global.PERM_OWNER = PERM_OWNER;
 global.PERM_ADMIN = PERM_ADMIN;
 global.PERM_STAFF = PERM_STAFF;
@@ -121,6 +131,8 @@ global.PERM_RECRUITER = PERM_RECRUITER;
 global.PERM_MEMBER = PERM_MEMBER;
 global.PERM_GUEST = PERM_GUEST;
 global.PERM_NONE = PERM_NONE;
+
+
 
 //global undefined for readable code
 var undefined;
@@ -383,17 +395,6 @@ function getPermissionLevelForMember(member) {
 	if (member.permissions.bitfield & BigInt(0x00000008))
 		perm = PERM_OWNER;
 	else {
-		//FIXME very inefficient
-		const roleChecks = [
-		    { roles: config.adminRoles, permission: PERM_ADMIN },
-		    { roles: config.staffRoles, permission: PERM_STAFF },
-		    { roles: config.divisionCommandRoles, permission: PERM_DIVISION_COMMANDER },
-		    { roles: config.modRoles, permission: PERM_MOD },
-		    { roles: ['Officer'].concat(config.recruiterRoles), permission: PERM_RECRUITER },
-		    { roles: [config.memberRole], permission: PERM_MEMBER },
-		    { roles: [config.guestRole], permission: PERM_GUEST }
-		];
-		
 		let perm = PERM_GUEST;
 		
 		for (const roleCheck of roleChecks) {
