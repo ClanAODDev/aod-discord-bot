@@ -385,9 +385,9 @@ function getPermissionLevelForMember(member) {
 		{ roles: config.divisionCommandRoles, permission: PERM_DIVISION_COMMANDER },
 		{ roles: config.modRoles, permission: PERM_MOD },
 		{ roles: config.recruiterRoles.concat([config.discordOfficerSuffix]), permission: PERM_RECRUITER },
-		{ roles: [config.memberRole], permission: PERM_MEMBER },
-		{ roles: [config.guestRole], permission: PERM_GUEST },
 		{ suffix: config.discordOfficerSuffix, permission: PERM_RECRUITER }
+		{ roles: [config.memberRole], permission: PERM_MEMBER },
+		{ roles: [config.guestRole], permission: PERM_GUEST }
 	];
 
 	let perm = PERM_GUEST;
