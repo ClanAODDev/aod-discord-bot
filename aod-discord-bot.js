@@ -391,6 +391,16 @@ function getStringForPermission(perm) {
 
 //map roles to permissions based on config
 function getPermissionLevelForMember(member) {
+	const roleChecks = [
+		{ roles: config.adminRoles, permission: PERM_ADMIN },
+		{ roles: config.staffRoles, permission: PERM_STAFF },
+		{ roles: config.divisionCommandRoles, permission: PERM_DIVISION_COMMANDER },
+		{ roles: config.modRoles, permission: PERM_MOD },
+		{ roles: config.recruiterRoles.concat([config.discordOfficerSuffix]), permission: PERM_RECRUITER },
+		{ roles: [config.memberRole], permission: PERM_MEMBER },
+		{ roles: [config.guestRole], permission: PERM_GUEST }
+	];
+
 	let perm = PERM_GUEST;
 	if (member.permissions.bitfield & BigInt(0x00000008))
 		perm = PERM_OWNER;
@@ -402,6 +412,10 @@ function getPermissionLevelForMember(member) {
 		        perm = roleCheck.permission;
 		        break;
 		    }
+		}
+
+		if (perm === PERM_GUEST && member.roles.cache.find(r => r.name.endsWith(config.discordOfficerSuffix))) {
+			perm = PERM_RECRUITER;
 		}
 	}
 	return [perm, getStringForPermission(perm)];
