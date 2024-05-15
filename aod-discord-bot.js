@@ -122,8 +122,6 @@ global.PERM_MEMBER = PERM_MEMBER;
 global.PERM_GUEST = PERM_GUEST;
 global.PERM_NONE = PERM_NONE;
 
-
-
 //global undefined for readable code
 var undefined;
 
