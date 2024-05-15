@@ -386,24 +386,23 @@ function getPermissionLevelForMember(member) {
 		{ roles: config.modRoles, permission: PERM_MOD },
 		{ roles: config.recruiterRoles.concat([config.discordOfficerSuffix]), permission: PERM_RECRUITER },
 		{ roles: [config.memberRole], permission: PERM_MEMBER },
-		{ roles: [config.guestRole], permission: PERM_GUEST }
+		{ roles: [config.guestRole], permission: PERM_GUEST },
+		{ suffix: config.discordOfficerSuffix, permission: PERM_RECRUITER }
 	];
 
 	let perm = PERM_GUEST;
-	if (member.permissions.bitfield & BigInt(0x00000008))
-		perm = PERM_OWNER;
-	else {
-		let perm = PERM_GUEST;
-		
-		for (const roleCheck of roleChecks) {
-		    if (roleCheck.roles.some(role => member.roles.cache.has(role))) {
-		        perm = roleCheck.permission;
-		        break;
-		    }
-		}
 
-		if (perm === PERM_GUEST && member.roles.cache.find(r => r.name.endsWith(config.discordOfficerSuffix))) {
-			perm = PERM_RECRUITER;
+	if (member.permissions.bitfield & BigInt(0x00000008)) {
+		perm = PERM_OWNER;
+	} else {
+		for (const roleCheck of roleChecks) {
+			if (roleCheck.roles && roleCheck.roles.some(role => member.roles.cache.has(role))) {
+				perm = roleCheck.permission;
+				break;
+			} else if (roleCheck.suffix && member.roles.cache.some(r => r.name.endsWith(roleCheck.suffix))) {
+				perm = roleCheck.permission;
+				break;
+			}
 		}
 	}
 	return [perm, getStringForPermission(perm)];
