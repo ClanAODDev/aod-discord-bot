@@ -112,16 +112,6 @@ const PERM_MEMBER = 2;
 const PERM_GUEST = 1;
 const PERM_NONE = 0;
 
-const roleChecks = [
-	{ roles: config.adminRoles, permission: PERM_ADMIN },
-	{ roles: config.staffRoles, permission: PERM_STAFF },
-	{ roles: config.divisionCommandRoles, permission: PERM_DIVISION_COMMANDER },
-	{ roles: config.modRoles, permission: PERM_MOD },
-	{ roles: ['Officer'].concat(config.recruiterRoles), permission: PERM_RECRUITER },
-	{ roles: [config.memberRole], permission: PERM_MEMBER },
-	{ roles: [config.guestRole], permission: PERM_GUEST }
-];
-
 global.PERM_OWNER = PERM_OWNER;
 global.PERM_ADMIN = PERM_ADMIN;
 global.PERM_STAFF = PERM_STAFF;
