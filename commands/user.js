@@ -14,7 +14,9 @@ module.exports = {
 			.addStringOption(option => option.setName('reason').setDescription('Kick reason')))
 		.addSubcommand(command => command.setName('ban').setDescription('Bans a user from the server')
 			.addUserOption(option => option.setName('user').setDescription('User').setRequired(true))
-			.addStringOption(option => option.setName('reason').setDescription('Ban reason')))
+			.addStringOption(option => option.setName('reason').setDescription('Ban reason'))
+			.addIntegerOption(option => option.setName('delete-messages').setDescription('Message purge duration')
+				.addChoices({ name: '10 minutes', value: 600 }, { name: '30 minutes', value: 1800 }, { name: '1 hour', value: 3600 }, { name: '1 day', value: 86400 }, )))
 		.addSubcommand(command => command.setName('mute').setDescription('Adds the Muted role to a user')
 			.addUserOption(option => option.setName('user').setDescription('User').setRequired(true)))
 		.addSubcommand(command => command.setName('unmute').setDescription('Removes the Muted role from a user')
@@ -83,8 +85,9 @@ module.exports = {
 				}
 
 				let reason = interaction.options.getString('reason') ?? "No reason provided";
+				let purgeDuration = interaction.options.getInteger('delete-messages') ?? 0
 
-				interaction.guild.members.ban(userToBan, { reason: `Requested by ${global.getNameFromMessage(interaction)}: ${reason}` })
+				interaction.guild.members.ban(userToBan, { reason: `Requested by ${global.getNameFromMessage(interaction)}: ${reason}`, deleteMessageSeconds: purgeDuration })
 					.catch(error => interaction.reply({ content: `Sorry, I couldn't ban because of : ${error}`, ephemeral: true }));
 				return interaction.reply({ content: `${userToBan.username} has been banned by ${member.user} because: ${reason}`, ephemeral: true });
 			}
