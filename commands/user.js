@@ -19,15 +19,7 @@ module.exports = {
 			.addUserOption(option => option.setName('user').setDescription('User').setRequired(true))
 			.addStringOption(option => option.setName('reason').setDescription('Ban reason'))
 			.addIntegerOption(option => option.setName('delete-messages').setDescription('Message purge duration')
-				.addChoices({ name: '10 minutes', value: 600 }, { name: '30 minutes', value: 1800 }, { name: '1 hour', value: 3600 }, { name: '1 day', value: 86400 }, )))
-		.addSubcommand(command => command.setName('mute').setDescription('Adds the Muted role to a user')
-			.addUserOption(option => option.setName('user').setDescription('User').setRequired(true)))
-		.addSubcommand(command => command.setName('unmute').setDescription('Removes the Muted role from a user')
-			.addUserOption(option => option.setName('user').setDescription('User').setRequired(true)))
-		.addSubcommand(command => command.setName('setptt').setDescription('Adds the PTT role to a user')
-			.addUserOption(option => option.setName('user').setDescription('User').setRequired(true)))
-		.addSubcommand(command => command.setName('clearptt').setDescription('Removes the PTT role from a user')
-			.addUserOption(option => option.setName('user').setDescription('User').setRequired(true))),
+				.addChoices({ name: '10 minutes', value: 600 }, { name: '30 minutes', value: 1800 }, { name: '1 hour', value: 3600 }, { name: '1 day', value: 86400 }, ))),
 	help: true,
 	checkPerm(perm, commandName) {
 		switch (commandName) {
@@ -35,10 +27,6 @@ module.exports = {
 			case 'kick':
 				return perm >= global.PERM_RECRUITER;
 			case 'ban':
-			case 'mute':
-			case 'unmute':
-			case 'setptt':
-			case 'clearptt':
 				return perm >= global.PERM_MOD;
 		}
 		return false;
@@ -154,22 +142,6 @@ module.exports = {
 					await interaction.editReply({ content: 'Timeout waiting for confirmation', components: [], ephemeral: true });
 				}
 				break;
-			}
-			case 'mute':
-			case 'unmute': {
-				let [targetPerm, targetPermName] = global.getPermissionLevelForMember(targetMember);
-				if (perm <= targetPerm)
-					return interaction.reply({ content: `You cannot mute ${targetMember.user.username}.`, ephemeral: true });
-
-				return addRemoveRole(interaction, interaction.guild, subCommand === 'mute', config.muteRole, targetMember, false);
-			}
-			case 'setptt':
-			case 'clearptt': {
-				let [targetPerm, targetPermName] = global.getPermissionLevelForMember(targetMember);
-				if (perm <= targetPerm)
-					return interaction.reply({ content: `You cannot make ${targetMember.user.username} PTT.`, ephemeral: true });
-
-				return addRemoveRole(interaction, interaction.guild, subCommand === 'setptt', config.pttRole, targetMember, false);
 			}
 		}
 	}
