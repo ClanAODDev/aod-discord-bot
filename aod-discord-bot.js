@@ -322,13 +322,13 @@ function messageReply(message, msg, edit) {
 }
 global.messageReply = messageReply;
 
-function sendGlobalNotification(interaction, msg) {
-	if (interaction) {
+function sendGlobalNotification(message, msg) {
+	if (message) {
 		if (!globalNotificationChannel || globalNotificationChannel.name !== config.globalNotificationChannel) {
-			globalNotificationChannel = interaction.guild.channels.cache.find(c => { return c.name === config.globalNotificationChannel; });
+			globalNotificationChannel = message.guild.channels.cache.find(c => { return c.name === config.globalNotificationChannel; });
 		}
 		if (typeof(msg) === 'object')
-			return globalNotificationChannel.send(interaction, { embeds: [msg] }).catch(() => {});
+			return globalNotificationChannel.send({ embeds: [msg] }).catch(() => {});
 		else
 			return globalNotificationChannel.send(msg).catch(() => {});
 	}
