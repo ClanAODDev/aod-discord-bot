@@ -322,10 +322,10 @@ function messageReply(message, msg, edit) {
 }
 global.messageReply = messageReply;
 
-function sendGlobalNotification(message, msg) {
-	if (message) {
+function sendGlobalNotification(guild, msg) {
+	if (guild) {
 		if (!globalNotificationChannel || globalNotificationChannel.name !== config.globalNotificationChannel) {
-			globalNotificationChannel = message.guild.channels.cache.find(c => { return c.name === config.globalNotificationChannel; });
+			globalNotificationChannel = guild.channels.cache.find(c => { return c.name === config.globalNotificationChannel; });
 		}
 		if (typeof(msg) === 'object')
 			return globalNotificationChannel.send({ embeds: [msg] }).catch(() => {});
