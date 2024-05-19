@@ -8,18 +8,26 @@ const {
 } = require('discord.js');
 const config = require("../config/aod-discord-bot.config.json");
 
+const deleteMessagesChoices = [
+	{ name: 'None', value: 0 },
+	{ name: '10 minutes', value: 600 },
+	{ name: '30 minutes', value: 1800 },
+	{ name: '1 hour', value: 3600 },
+	{ name: '1 day', value: 86400 },
+	{ name: '7 day', value: 604800 },
+];
+
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('user')
 		.setDescription('Manage a user')
 		.addSubcommand(command => command.setName('kick').setDescription('Kicks a user from the server')
 			.addUserOption(option => option.setName('user').setDescription('User').setRequired(true))
-			.addStringOption(option => option.setName('reason').setDescription('Kick reason')))
+			.addStringOption(option => option.setName('reason').setDescription('Kick reason').setRequired(true)))
 		.addSubcommand(command => command.setName('ban').setDescription('Bans a user from the server')
 			.addUserOption(option => option.setName('user').setDescription('User').setRequired(true))
-			.addStringOption(option => option.setName('reason').setDescription('Ban reason'))
-			.addIntegerOption(option => option.setName('delete-messages').setDescription('Message purge duration')
-				.addChoices({ name: '10 minutes', value: 600 }, { name: '30 minutes', value: 1800 }, { name: '1 hour', value: 3600 }, { name: '1 day', value: 86400 }, ))),
+			.addStringOption(option => option.setName('reason').setDescription('Ban reason').setRequired(true))
+			.addIntegerOption(option => option.setName('delete-messages').setDescription('Message purge duration').addChoices(...deleteMessagesChoices))),
 	help: true,
 	checkPerm(perm, commandName) {
 		switch (commandName) {
@@ -47,7 +55,7 @@ module.exports = {
 				if (!targetMember)
 					return global.ephemeralReply(interaction, 'User is invalid or left the server.');
 
-				let reason = interaction.options.getString('reason') ?? "No reason provided";
+				let reason = interaction.options.getString('reason');
 
 				const confirm = new ButtonBuilder()
 					.setCustomId('confirm_user_kick')
@@ -87,8 +95,8 @@ module.exports = {
 			}
 			case 'ban': {
 				let userToBan = targetMember ?? interaction.options.getUser('user');
-				let reason = interaction.options.getString('reason') ?? "No reason provided";
-				let purgeDuration = interaction.options.getInteger('delete-messages') ?? 0
+				let reason = interaction.options.getString('reason');
+				let purgeDuration = interaction.options.getInteger('delete-messages') ?? 0;
 
 				const confirm = new ButtonBuilder()
 					.setCustomId('confirm_user_ban')
