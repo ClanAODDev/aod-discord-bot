@@ -94,6 +94,21 @@ function getComponentsForTarget(member, perm, targetMember, targetPerm, invite) 
 
 	if (perm >= global.PERM_MOD && perm > targetPerm) {
 		const modRow = new ActionRowBuilder();
+		let guestRole = targetMember.roles.cache.find(r => r.name === global.config.guestRole);
+		if (guestRole) {
+			const unsetguest = new ButtonBuilder()
+				.setCustomId('remove_guest_role')
+				.setLabel('Remove Guest Role')
+				.setStyle(ButtonStyle.Primary);
+			modRow.addComponents(unsetguest);
+		} else if (targetPerm < global.PERM_MEMBER) {
+			const setguest = new ButtonBuilder()
+				.setCustomId('add_guest_role')
+				.setLabel('Add Guest Role')
+				.setStyle(ButtonStyle.Danger);
+			modRow.addComponents(setguest);
+		}
+
 		if (targetMember.voice.channel) {
 			if (targetMember.voice.serverMute) {
 				const unmute = new ButtonBuilder()
@@ -152,21 +167,6 @@ function getComponentsForTarget(member, perm, targetMember, targetPerm, invite) 
 				.setLabel('Add PTT Role')
 				.setStyle(ButtonStyle.Danger);
 			modRow.addComponents(setptt);
-		}
-
-		let guestRole = targetMember.roles.cache.find(r => r.name === global.config.guestRole);
-		if (guestRole) {
-			const unsetguest = new ButtonBuilder()
-				.setCustomId('remove_guest_role')
-				.setLabel('Remove Guest Role')
-				.setStyle(ButtonStyle.Primary);
-			modRow.addComponents(unsetguest);
-		} else if (targetPerm < global.PERM_MEMBER) {
-			const setguest = new ButtonBuilder()
-				.setCustomId('add_guest_role')
-				.setLabel('Add Guest Role')
-				.setStyle(ButtonStyle.Danger);
-			modRow.addComponents(setguest);
 		}
 
 		components.push(modRow);
@@ -253,8 +253,10 @@ module.exports = {
 		interaction.replied = true; //avoid common reply
 		const response = await global.ephemeralReply(interaction, { embeds: [embed], components: components }, true);
 		if (components.length) {
-			const buttons = ['send_invite', 'move_to_me', 'disconnect', 'server_unmute', 'server_mute', 'server_undeaf',
-				'server_deaf', 'remove_mute_role', 'add_mute_role', 'remove_ptt_role', 'add_ptt_role', 'remove_guest_role', 'add_guest_role'];
+			const buttons = ['send_invite', 'move_to_me', 'disconnect',
+				'server_unmute', 'server_mute', 'server_undeaf', 'server_deaf',
+				'remove_mute_role', 'add_mute_role', 'remove_ptt_role', 'add_ptt_role',
+				'remove_guest_role', 'add_guest_role'];
 			const filter = (i) => i.user.id === interaction.user.id && buttons.includes(i.customId);
 			try {
 				while (1) {
@@ -282,6 +284,14 @@ module.exports = {
 						}
 						case 'disconnect': {
 							await targetMember.voice.disconnect().catch(console.log);
+							break;
+						}
+						case 'remove_guest_role': {
+							await addRemoveRole(interaction, interaction.guild, false, global.config.guestRole, targetMember, true);
+							break;
+						}
+						case 'add_guest_role': {
+							await addRemoveRole(interaction, interaction.guild, true, global.config.guestRole, targetMember, true);
 							break;
 						}
 						case 'server_unmute': {
@@ -314,14 +324,6 @@ module.exports = {
 						}
 						case 'add_ptt_role': {
 							await addRemoveRole(interaction, interaction.guild, true, global.config.pttRole, targetMember, true);
-							break;
-						}
-						case 'remove_guest_role': {
-							await addRemoveRole(interaction, interaction.guild, false, global.config.guestRole, targetMember, true);
-							break;
-						}
-						case 'add_guest_role': {
-							await addRemoveRole(interaction, interaction.guild, true, global.config.guestRole, targetMember, true);
 							break;
 						}
 					}
