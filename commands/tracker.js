@@ -10,14 +10,14 @@ module.exports = {
 		.setName('tracker')
 		.setDescription('Queries AOD Tracker for information')
 
-		.addSubcommand(command => command.setName('search').setDescription('Search for members in AOD Tracker')
-			.addStringOption(option => option.setName('username').setDescription('AOD Forum Username').setRequired(true)))
-		.addSubcommand(command => command.setName('search-discord').setDescription('Search members by Discord user')
+		.addSubcommand(command => command.setName('search').setDescription('Search for members in AOD Tracker by AOD username')
+			.addStringOption(option => option.setName('username').setDescription('AOD Username').setRequired(true)))
+		.addSubcommand(command => command.setName('search-discord').setDescription('Search for members in AOD Tracker by Discord user')
 			.addUserOption(option => option.setName('user').setDescription('Discord User').setRequired(true)))
-		.addSubcommand(command => command.setName('search-teamspeak').setDescription('Search members by TS Unique ID')
-			.addStringOption(option => option.setName('unique-id').setDescription('Member Name').setRequired(true)))
+		.addSubcommand(command => command.setName('search-teamspeak').setDescription('Search for members in AOD Tracker by TeamSpeak unique ID')
+			.addStringOption(option => option.setName('unique-id').setDescription('TeamSpeak Unique ID').setRequired(true)))
 		.addSubcommand(command => command.setName('division').setDescription('Query basic division information')
-			.addStringOption(option => option.setName('abbreviation').setDescription('Member Name').setRequired(true))),
+			.addStringOption(option => option.setName('abbreviation').setDescription('Division Abbreviation').setRequired(true))),
 	help: true,
 	checkPerm(perm, commandName) {
 		switch (commandName) {
