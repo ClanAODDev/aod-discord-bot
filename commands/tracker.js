@@ -73,6 +73,8 @@ module.exports = {
 				return global.messageReply(interaction, { embeds: [body.embed] });
 			else if (body.text)
 				return global.messageReply(interaction, body.text);
+			else
+				return global.messageReply(interaction, 'There was an error processing the request');
 		} catch (e) {
 			return global.messageReply(interaction, 'There was an error processing the request');
 		}
