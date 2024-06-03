@@ -34,35 +34,43 @@ module.exports = {
 		await interaction.deferReply();
 		const subCommand = interaction.options.getSubcommand();
 
+		let trackerCommand;
+		let filter;
 		let query;
 		switch (subCommand) {
 			case 'search': {
+				trackerCommand = 'member';
+				filter = 'name';
 				query = interaction.options.getString('username');
 				break;
 			}
 			case 'search-discord': {
+				trackerCommand = 'member';
+				filter = 'discord';
 				query = interaction.options.getUser('user').username;
 				break;
 			}
 			case 'search-teamspeak': {
+				trackerCommand = 'member';
+				filter = 'ts_unique_id';
 				query = interaction.options.getString('unique-id');
 				break;
 			}
 			case 'division': {
+				trackerCommand = 'division';
 				query = interaction.options.getString('abbreviation');
 				break;
 			}
 		}
 
 		try {
-			let data = new URLSearchParams();
-			data.append('type', 'discord');
-			data.append('text', `${subCommand}:${query}`);
-			data.append('token', global.config.trackerToken);
-
-			let response = await fetch(`${global.config.trackerURL}/slack`, {
-				method: 'post',
-				body: data,
+			const trackerURL = new URL(`${global.config.trackerURL}/bot/commands/${trackerCommand}`);
+			trackerURL.searchParams.append('token', global.config.trackerToken);
+			if (filter)
+				trackerURL.searchParams.append('filter', filter);
+			trackerURL.searchParams.append('query', query);
+			let response = await fetch(trackerURL, {
+				method: 'GET',
 				headers: {
 					'User-Agent': 'Discord Bot',
 					'Accept': 'application/json'
@@ -71,8 +79,8 @@ module.exports = {
 			let body = await response.json();
 			if (body.embed)
 				return global.messageReply(interaction, { embeds: [body.embed] });
-			else if (body.text)
-				return global.messageReply(interaction, body.text);
+			else if (body.message)
+				return global.messageReply(interaction, body.message);
 			else
 				return global.messageReply(interaction, 'There was an error processing the request');
 		} catch (e) {
