@@ -43,34 +43,32 @@ module.exports = {
 		const commandGroup = interaction.options.getSubcommandGroup(false);
 
 		let trackerCommand;
-		let filter;
-		let query;
+		let field;
+		let value;
 		if (commandGroup === null) {
 			switch (subCommand) {
 				case 'division': {
 					trackerCommand = 'division';
-					query = interaction.options.getString('abbreviation');
+					value = interaction.options.getString('abbreviation');
 					break;
 				}
 			}
 		} else if (commandGroup === 'search') {
+			trackerCommand = 'member';
 			switch (subCommand) {
 				case 'name': {
-					trackerCommand = 'member';
-					filter = 'name';
-					query = interaction.options.getString('username');
+					field = 'name';
+					value = interaction.options.getString('username');
 					break;
 				}
 				case 'discord': {
-					trackerCommand = 'member';
-					filter = 'discord';
-					query = interaction.options.getUser('user').username;
+					field = 'discord';
+					value = interaction.options.getUser('user').username;
 					break;
 				}
 				case 'teamspeak': {
-					trackerCommand = 'member';
-					filter = 'ts_unique_id';
-					query = interaction.options.getString('unique-id');
+					field = 'ts_unique_id';
+					value = interaction.options.getString('unique-id');
 					break;
 				}
 			}
@@ -79,9 +77,9 @@ module.exports = {
 		try {
 			const trackerURL = new URL(`${global.config.trackerURL}/bot/commands/${trackerCommand}`);
 			trackerURL.searchParams.append('token', global.config.trackerToken);
-			if (filter)
-				trackerURL.searchParams.append('filter', filter);
-			trackerURL.searchParams.append('query', query);
+			if (field)
+				trackerURL.searchParams.append('field', field);
+			trackerURL.searchParams.append('value', value);
 			let response = await fetch(trackerURL, {
 				method: 'GET',
 				headers: {
