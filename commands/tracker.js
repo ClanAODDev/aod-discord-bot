@@ -10,56 +10,69 @@ module.exports = {
 		.setName('tracker')
 		.setDescription('Queries AOD Tracker for information')
 
-		.addSubcommand(command => command.setName('search').setDescription('Search for members in AOD Tracker by AOD username')
-			.addStringOption(option => option.setName('username').setDescription('AOD Username').setRequired(true)))
-		.addSubcommand(command => command.setName('search-discord').setDescription('Search for members in AOD Tracker by Discord user')
-			.addUserOption(option => option.setName('user').setDescription('Discord User').setRequired(true)))
-		.addSubcommand(command => command.setName('search-teamspeak').setDescription('Search for members in AOD Tracker by TeamSpeak unique ID')
-			.addStringOption(option => option.setName('unique-id').setDescription('TeamSpeak Unique ID').setRequired(true)))
+		.addSubcommandGroup(command => command.setName('search').setDescription('Search for members in AOD Tracker')
+			.addSubcommand(command => command.setName('name').setDescription('Search for members in AOD Tracker by AOD username')
+				.addStringOption(option => option.setName('username').setDescription('AOD Username').setRequired(true)))
+			.addSubcommand(command => command.setName('discord').setDescription('Search for members in AOD Tracker by Discord user')
+				.addUserOption(option => option.setName('user').setDescription('Discord User').setRequired(true)))
+			.addSubcommand(command => command.setName('teamspeak').setDescription('Search for members in AOD Tracker by TeamSpeak unique ID')
+				.addStringOption(option => option.setName('unique-id').setDescription('TeamSpeak Unique ID').setRequired(true))))
 		.addSubcommand(command => command.setName('division').setDescription('Query basic division information')
 			.addStringOption(option => option.setName('abbreviation').setDescription('Division Abbreviation').setRequired(true))),
 	help: true,
-	checkPerm(perm, commandName) {
-		switch (commandName) {
-			case 'tracker':
-			case 'search':
-			case 'search-discord':
-			case 'search-teamspeak':
-			case 'division':
-				return perm >= global.PERM_MEMBER;
+	checkPerm(perm, commandName, parentName) {
+		if (parentName === 'search') {
+			switch (commandName) {
+				case 'name':
+				case 'discord':
+				case 'teamspeak':
+					return perm >= global.PERM_MEMBER;
+			}
+		} else {
+			switch (commandName) {
+				case 'tracker':
+				case 'division':
+					return perm >= global.PERM_MEMBER;
+			}
 		}
 		return false;
 	},
 	async execute(interaction, guild, member, perm) {
 		await interaction.deferReply();
 		const subCommand = interaction.options.getSubcommand();
+		const commandGroup = interaction.options.getSubcommandGroup(false);
 
 		let trackerCommand;
 		let filter;
 		let query;
-		switch (subCommand) {
-			case 'search': {
-				trackerCommand = 'member';
-				filter = 'name';
-				query = interaction.options.getString('username');
-				break;
+		if (commandGroup === null) {
+			switch (subCommand) {
+				case 'division': {
+					trackerCommand = 'division';
+					query = interaction.options.getString('abbreviation');
+					break;
+				}
 			}
-			case 'search-discord': {
-				trackerCommand = 'member';
-				filter = 'discord';
-				query = interaction.options.getUser('user').username;
-				break;
-			}
-			case 'search-teamspeak': {
-				trackerCommand = 'member';
-				filter = 'ts_unique_id';
-				query = interaction.options.getString('unique-id');
-				break;
-			}
-			case 'division': {
-				trackerCommand = 'division';
-				query = interaction.options.getString('abbreviation');
-				break;
+		} else if (commandGroup === 'search') {
+			switch (subCommand) {
+				case 'name': {
+					trackerCommand = 'member';
+					filter = 'name';
+					query = interaction.options.getString('username');
+					break;
+				}
+				case 'discord': {
+					trackerCommand = 'member';
+					filter = 'discord';
+					query = interaction.options.getUser('user').username;
+					break;
+				}
+				case 'teamspeak': {
+					trackerCommand = 'member';
+					filter = 'ts_unique_id';
+					query = interaction.options.getString('unique-id');
+					break;
+				}
 			}
 		}
 
