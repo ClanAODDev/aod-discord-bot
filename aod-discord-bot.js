@@ -1918,6 +1918,7 @@ async function deleteDivision(message, member, perm, guild, divisionName) {
 	let memberRole = guild.roles.cache.find(r => { return r.name == memberRoleName; });
 	let divisionRole = guild.roles.cache.find(r => { return r.name == divisionRoleName; });
 
+	await removeManagedRole(message, member, guild, divisionRoleName, true);
 	await removeManagedRole(message, member, guild, divisionRoleName, false);
 	await unsetDependentRole(guild, message, memberRole, memberRole);
 	await unsetDependentRole(guild, message, memberRole, divisionRole);
