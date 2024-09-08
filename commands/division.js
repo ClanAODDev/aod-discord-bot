@@ -294,6 +294,7 @@ module.exports = {
 						await setDependentRole(guild, interaction, divisionMemberRole, memberRole, false);
 						await setDependentRole(guild, interaction, divisionMemberRole, divisionRole, false);
 						await addManagedRole(interaction, member, guild, divisionRoleName, false, false);
+						await addManagedRole(interaction, member, guild, divisionRoleName, false, true);
 					}
 				}
 

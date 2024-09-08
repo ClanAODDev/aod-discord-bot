@@ -1778,6 +1778,7 @@ async function addDivision(message, member, perm, guild, divisionName) {
 		await setDependentRole(guild, message, divisionMemberRole, memberRole, false);
 		await setDependentRole(guild, message, divisionMemberRole, divisionRole, false);
 		await addManagedRole(message, member, guild, divisionRoleName, false, false);
+		await addManagedRole(message, member, guild, divisionRoleName, false, true);
 
 		//add category for division
 		let permissions = await getChannelPermissions(guild, message, perm,
