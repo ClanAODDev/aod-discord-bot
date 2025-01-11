@@ -252,7 +252,7 @@ module.exports = {
 				}
 				if (userData.length == 1) {
 					embed.image = {
-						url: `https://tracker-dev.clanaod.net/members/${data.id}/my-awards.png`
+						url: `https://tracker.clanaod.net/members/${data.id}/my-awards.png`
 					};
 				}
 			}
