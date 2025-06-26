@@ -23,6 +23,7 @@ function run(cmd, args) {
 
 const projectActions = [
 	{ name: 'Deploy', value: 'deploy' },
+	{ name: 'Deploy w/ Force', value: 'deploy-with-force' },
 	{ name: 'Restart Service', value: 'restart-service' },
 	{ name: 'Restart Supervisor', value: 'restart-supervisor' },
 	{ name: 'Revert', value: 'revert-deployment' },
