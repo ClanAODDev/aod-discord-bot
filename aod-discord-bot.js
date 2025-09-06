@@ -2006,13 +2006,14 @@ async function deleteDivision(message, member, perm, guild, divisionName) {
 		await ephemeralReply(message, `${divisionName} category not found`);
 	}
 
+	const memberRole = guild.roles.cache.find(r => { return r.name == config.memberRole; });
 	let offcerRole = guild.roles.cache.find(r => { return r.name == officerRoleName; });
-	let memberRole = guild.roles.cache.find(r => { return r.name == memberRoleName; });
+	let divisionMemberRole = guild.roles.cache.find(r => { return r.name == memberRoleName; });
 	let divisionRole = guild.roles.cache.find(r => { return r.name == divisionRoleName; });
 
 	await removeManagedRole(message, member, guild, divisionRoleName, true);
 	await removeManagedRole(message, member, guild, divisionRoleName, false);
-	await unsetDependentRole(guild, message, memberRole, memberRole);
+	await unsetDependentRole(guild, message, memberRole, divisionMemberRole);
 	await unsetDependentRole(guild, message, memberRole, divisionRole);
 
 	if (config.officerRole) {
@@ -2036,9 +2037,9 @@ async function deleteDivision(message, member, perm, guild, divisionName) {
 		await ephemeralReply(message, `${officerRoleName} role not found`);
 	}
 
-	if (memberRole) {
+	if (divisionMemberRole) {
 		try {
-			await memberRole.delete(`Requested by ${getNameFromMessage(message)}`);
+			await divisionMemberRole.delete(`Requested by ${getNameFromMessage(message)}`);
 			await ephemeralReply(message, `${memberRoleName} role removed`);
 		} catch (error) {
 			await ephemeralReply(message, `Failed to delete role ${memberRoleName}`);
