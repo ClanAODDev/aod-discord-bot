@@ -4619,7 +4619,7 @@ client.on('channelDelete', (channel) => {
 });
 
 //ready handler
-client.on('ready', async function() {
+client.on('clientReady', async function() {
 	//remove any empty temp channels
 	const guild = client.guilds.resolve(config.guildId);
 	console.log(`Bot has started, with ${client.users.cache.size} users, in ${client.channels.cache.size} channels of ${client.guilds.cache.size} guilds.`);
