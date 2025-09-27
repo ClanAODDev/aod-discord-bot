@@ -4273,7 +4273,7 @@ client.on('voiceStateUpdate', async function(oldMemberState, newMemberState) {
 			if (joinToCreateChannels.tempChannels[oldMemberState.channelId]) {
 				//user left temp channel created by join-to-create
 				if (oldMemberState.channel.members.size === 0) {
-					oldMemberState.channel.delete();
+					oldMemberState.channel.delete().catch(error => {});
 					delete joinToCreateChannels.tempChannels[oldMemberState.channelId];
 					fs.writeFileSync(config.joinToCreateChannels, JSON.stringify(joinToCreateChannels), 'utf8');
 				}
@@ -4282,7 +4282,7 @@ client.on('voiceStateUpdate', async function(oldMemberState, newMemberState) {
 				if (oldCategory && oldCategory.name === config.tempChannelCategory) {
 					//user left temp channel in the global category
 					if (oldMemberState.channel.members.size === 0) {
-						oldMemberState.channel.delete();
+						oldMemberState.channel.delete().catch(error => {});
 					}
 				}
 			}
