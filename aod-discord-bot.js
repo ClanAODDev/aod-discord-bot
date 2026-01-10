@@ -4606,6 +4606,9 @@ function forumSyncTimerCallback() {
 }
 
 async function getTwitchAccessToken() {
+	if (!config.twitchClientId || !config.twitchClientSecret)
+		return null;
+
 	let now = Date.now();
 	if (twitchAccessToken && now < twitchTokenExpiry)
 		return twitchAccessToken;
