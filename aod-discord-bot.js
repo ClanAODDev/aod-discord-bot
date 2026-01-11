@@ -3006,6 +3006,52 @@ function getFieldsFromArray(arr, fieldName) {
 	return fields;
 }
 
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function with_retry(fn, maxAttempts = 5) {
+	const name = fn.name || "<anonymous>";
+    for (let i = 0; i < maxAttempts; i++) {
+        try {
+			if (i > 0) {
+				console.log(`[retry] attempt ${i + 1}/${maxAttempts} for ${name}`);
+			}
+            return await fn();
+        } catch (e) {
+            let retrySec = null;
+            if (e.name === "GatewayRateLimitError" && e.data.opcode === 8 && typeof e.data.retry_after === "number") {
+                retrySec = e.data.retry_after;
+            } else if (e.code === "GUILD_MEMBERS_TIMEOUT") {
+                retrySec = 5;
+            }
+            if (!retrySec)
+                throw e;
+            await sleep(retrySec * 1000);
+        }
+    }
+    throw new Error("with_retry: exceeded max attempts");
+}
+
+var _lastMemberFetch = 0;
+function updateGuildMembers(guild) {
+	let now = new Date();
+	if ((now - _lastMemberFetch) > (30 * 1000)) {
+		_lastMemberFetch = now;
+		return with_retry(() => guild.members.fetch());
+	}
+	return Promise.resolve();
+}
+
+var _lastRoleFetch = 0;
+function updateGuildRoles(guild) {
+	let now = new Date();
+	if ((now - _lastRoleFetch) > (30 * 1000)) {
+		_lastRoleFetch = now;
+		return with_retry(() => guild.roles.fetch());
+	}
+	return Promise.resolve();
+}
 
 function setDiscordIDForForumUser(forumUser, guildMember) {
 	if (forumUser.discordid == guildMember.user.id)
@@ -3086,8 +3132,7 @@ function matchGuildMemberTag(guildMember) {
 function doForumSync(message, member, guild, perm, doDaily) {
 	let promise = new Promise(async function(resolve, reject) {
 		var hrStart = process.hrtime();
-		await guild.roles.fetch()
-			.catch(error => { console.log(error); });
+		await updateGuildRoles(guild);
 		const guestRole = guild.roles.cache.find(r => { return r.name == config.guestRole; });
 		const memberRole = guild.roles.cache.find(r => { return r.name == config.memberRole; });
 		const notificationChannel = guild.channels.cache.find(c => { return c.name === config.globalNotificationChannel; });
@@ -3124,8 +3169,7 @@ function doForumSync(message, member, guild, perm, doDaily) {
 			idle = 0,
 			dnd = 0,
 			total = 0;
-		await guild.members.fetch()
-			.catch(error => { console.log(error); });
+		await updateGuildMembers(guild);
 		guild.members.cache.forEach(function(m) {
 			if (!m.presence) {
 				offline++;
@@ -4624,10 +4668,10 @@ client.on('clientReady', async function() {
 	const guild = client.guilds.resolve(config.guildId);
 	console.log(`Bot has started, with ${client.users.cache.size} users, in ${client.channels.cache.size} channels of ${client.guilds.cache.size} guilds.`);
 
-	await guild.members.fetch().catch(console.log);
-	await guild.roles.fetch().catch(console.log);
-	await guild.commands.fetch().catch(console.log);
-	await client.application.commands.fetch().catch(console.log);
+	await updateGuildMembers(guild);
+	await updateGuildRoles(guild);
+	await with_retry(() => guild.commands.fetch());
+	await with_retry(() => client.application.commands.fetch());
 	console.log(`Data fetch complete`);
 
 	let clientMember = guild.members.cache.get(client.user.id);
