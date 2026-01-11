@@ -4741,13 +4741,13 @@ client.on('clientReady', async function() {
 	forumSyncTimerCallback(); //prime the date and do initial adds
 	forumSyncTimer = setInterval(forumSyncTimerCallback, config.forumSyncIntervalMS);
 
-	if (config.twitchClientId && config.twitchClientSecret && config.twitchChannelName) {
+	if (config.twitch?.clientId && config.twitch?.clientSecret && config.twitch?.channelName) {
 		twitchConfig = {
-			clientId: config.twitchClientId,
-			clientSecret: config.twitchClientSecret,
-			channelName: config.twitchChannelName,
-			notificationChannel: config.twitchNotificationChannel,
-			checkIntervalMS: config.twitchCheckIntervalMS || 60000
+			clientId: config.twitch.clientId,
+			clientSecret: config.twitch.clientSecret,
+			channelName: config.twitch.channelName,
+			notificationChannel: config.twitch.notificationChannel,
+			checkIntervalMS: config.twitch.checkIntervalMS || 60000
 		};
 		twitchMonitorCallback();
 		twitchMonitorTimer = setInterval(twitchMonitorCallback, twitchConfig.checkIntervalMS);
