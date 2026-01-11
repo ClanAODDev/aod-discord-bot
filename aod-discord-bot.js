@@ -4545,6 +4545,10 @@ async function checkAddDependentRoles(guild, role, member, message) {
 				continue;
 			}
 			let requiredRoleIDs = dependentRoles.requires[potentialRoleID];
+			if (!requiredRoleIDs) {
+				console.log(`Dependent role ID ${potentialRoleID} not defined in requires`);
+				continue;
+			}
 			let add = true;
 			for (let j = 0; j < requiredRoleIDs.length; j++) {
 				if (roleId === requiredRoleIDs[j]) {
