@@ -22,8 +22,8 @@ module.exports = {
 				"url": "https://i.imgur.com/3j76uUf.png"
 			},
 			"author": {
-			"icon_url": "https://i.imgur.com/3j76uUf.png",
-			"name": "ClanAOD"
+				"icon_url": "https://i.imgur.com/3j76uUf.png",
+				"name": "ClanAOD"
 			}
 		});
 	},

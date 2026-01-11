@@ -3009,33 +3009,34 @@ function getFieldsFromArray(arr, fieldName) {
 }
 
 function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+	return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function with_retry(fn, maxAttempts = 5) {
 	const name = fn.name || "<anonymous>";
-    for (let i = 0; i < maxAttempts; i++) {
-        try {
+	for (let i = 0; i < maxAttempts; i++) {
+		try {
 			if (i > 0) {
 				console.log(`[retry] attempt ${i + 1}/${maxAttempts} for ${name}`);
 			}
-            return await fn();
-        } catch (e) {
-            let retrySec = null;
-            if (e.name === "GatewayRateLimitError" && e.data.opcode === 8 && typeof e.data.retry_after === "number") {
-                retrySec = e.data.retry_after;
-            } else if (e.code === "GUILD_MEMBERS_TIMEOUT") {
-                retrySec = 5;
-            }
-            if (!retrySec)
-                throw e;
-            await sleep(retrySec * 1000);
-        }
-    }
-    throw new Error("with_retry: exceeded max attempts");
+			return await fn();
+		} catch (e) {
+			let retrySec = null;
+			if (e.name === "GatewayRateLimitError" && e.data.opcode === 8 && typeof e.data.retry_after === "number") {
+				retrySec = e.data.retry_after;
+			} else if (e.code === "GUILD_MEMBERS_TIMEOUT") {
+				retrySec = 5;
+			}
+			if (!retrySec)
+				throw e;
+			await sleep(retrySec * 1000);
+		}
+	}
+	throw new Error("with_retry: exceeded max attempts");
 }
 
 var _lastMemberFetch = 0;
+
 function updateGuildMembers(guild) {
 	let now = new Date();
 	if ((now - _lastMemberFetch) > (30 * 1000)) {
@@ -3046,6 +3047,7 @@ function updateGuildMembers(guild) {
 }
 
 var _lastRoleFetch = 0;
+
 function updateGuildRoles(guild) {
 	let now = new Date();
 	if ((now - _lastRoleFetch) > (30 * 1000)) {
