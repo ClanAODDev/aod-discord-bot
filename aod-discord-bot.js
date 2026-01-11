@@ -1128,6 +1128,8 @@ async function getChannelPermissions(guild, message, perm, level, type, division
 			PermissionsBitField.Flags.MoveMembers,
 			PermissionsBitField.Flags.ManageEvents,
 			PermissionsBitField.Flags.CreateEvents,
+			PermissionsBitField.Flags.BypassSlowmode,
+			PermissionsBitField.Flags.PinMessages,
 			FlagSetVoiceChannelStatus
 		]);
 		let memberAllow = allow.concat([
