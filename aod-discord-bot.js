@@ -4629,6 +4629,9 @@ async function getTwitchAccessToken() {
 }
 
 async function twitchMonitorCallback() {
+	if (!config.twitch?.clientId)
+		return;
+
 	let token = await getTwitchAccessToken();
 	if (!token)
 		return;
