@@ -4575,7 +4575,6 @@ var twitchMonitorTimer = null;
 var twitchAccessToken = null;
 var twitchTokenExpiry = 0;
 var twitchStreamWasLive = false;
-var twitchConfig = null;
 
 function forumSyncTimerCallback() {
 	global.lastForumSync = new Date();
@@ -4607,9 +4606,6 @@ function forumSyncTimerCallback() {
 }
 
 async function getTwitchAccessToken() {
-	if (!twitchConfig)
-		return null;
-
 	let now = Date.now();
 	if (twitchAccessToken && now < twitchTokenExpiry)
 		return twitchAccessToken;
@@ -4618,7 +4614,7 @@ async function getTwitchAccessToken() {
 		let response = await fetchTimeout('https://id.twitch.tv/oauth2/token', 5000, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: `client_id=${twitchConfig.clientId}&client_secret=${twitchConfig.clientSecret}&grant_type=client_credentials`
+			body: `client_id=${config.twitch.clientId}&client_secret=${config.twitch.clientSecret}&grant_type=client_credentials`
 		});
 		let data = await response.json();
 		if (data.access_token) {
@@ -4633,18 +4629,15 @@ async function getTwitchAccessToken() {
 }
 
 async function twitchMonitorCallback() {
-	if (!twitchConfig)
-		return;
-
 	let token = await getTwitchAccessToken();
 	if (!token)
 		return;
 
 	try {
-		let response = await fetchTimeout(`https://api.twitch.tv/helix/streams?user_login=${twitchConfig.channelName}`, 5000, {
+		let response = await fetchTimeout(`https://api.twitch.tv/helix/streams?user_login=${config.twitch.channelName}`, 5000, {
 			method: 'GET',
 			headers: {
-				'Client-ID': twitchConfig.clientId,
+				'Client-ID': config.twitch.clientId,
 				'Authorization': `Bearer ${token}`
 			}
 		});
@@ -4654,13 +4647,13 @@ async function twitchMonitorCallback() {
 		if (isLive && !twitchStreamWasLive) {
 			let stream = data.data[0];
 			const guild = client.guilds.resolve(config.guildId);
-			const channel = guild.channels.cache.find(c => c.name === twitchConfig.notificationChannel);
+			const channel = guild.channels.cache.find(c => c.name === config.twitch.notificationChannel);
 			if (channel) {
 				let thumbnailUrl = stream.thumbnail_url.replace('{width}', '400').replace('{height}', '225');
 				let embed = {
 					color: 0x9146FF,
 					title: stream.title,
-					url: `https://twitch.tv/${twitchConfig.channelName}`,
+					url: `https://twitch.tv/${config.twitch.channelName}`,
 					author: { name: `${stream.user_name} is now live on Twitch!` },
 					fields: [{ name: 'Game', value: stream.game_name || 'Unknown', inline: true }],
 					image: { url: `${thumbnailUrl}?t=${Date.now()}` },
@@ -4742,15 +4735,8 @@ client.on('clientReady', async function() {
 	forumSyncTimer = setInterval(forumSyncTimerCallback, config.forumSyncIntervalMS);
 
 	if (config.twitch?.clientId && config.twitch?.clientSecret && config.twitch?.channelName) {
-		twitchConfig = {
-			clientId: config.twitch.clientId,
-			clientSecret: config.twitch.clientSecret,
-			channelName: config.twitch.channelName,
-			notificationChannel: config.twitch.notificationChannel,
-			checkIntervalMS: config.twitch.checkIntervalMS || 60000
-		};
 		twitchMonitorCallback();
-		twitchMonitorTimer = setInterval(twitchMonitorCallback, twitchConfig.checkIntervalMS);
+		twitchMonitorTimer = setInterval(twitchMonitorCallback, config.twitch.checkIntervalMS || 60000);
 	}
 
 	startNextSavedTimer();
