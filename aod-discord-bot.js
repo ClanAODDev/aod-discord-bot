@@ -4698,11 +4698,13 @@ async function twitchMonitorCallback() {
 		});
 		let data = await response.json();
 		let isLive = data.data && data.data.length > 0 && data.data[0].type === 'live';
+		console.log(`Twitch: channel=${config.twitch.channelName} isLive=${isLive} wasLive=${twitchStreamWasLive}`);
 
 		if (isLive && !twitchStreamWasLive) {
 			let stream = data.data[0];
 			const guild = client.guilds.resolve(config.guildId);
 			const channel = guild.channels.cache.find(c => c.name === config.twitch.notificationChannel);
+			console.log(`Twitch: posting to ${config.twitch.notificationChannel} found=${!!channel}`);
 			if (channel) {
 				let thumbnailUrl = stream.thumbnail_url.replace('{width}', '400').replace('{height}', '225');
 				let embed = {
