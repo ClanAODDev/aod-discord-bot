@@ -1552,29 +1552,52 @@ async function setChannelPerms(guild, message, member, perm, channel, type, leve
 }
 global.setChannelPerms = setChannelPerms;
 
-function setChannelRecordingIndicator(channel, set) {
-	//assume first character for now
-	let name = null;
+function setChannelIndicator(channel, indicator, set) {
+	let name = channel.name;
 
+	// Extract leading codepoints
+	let prefix = '';
+	while (name.length && name.codePointAt(0) >= 0x1F300) {
+		const cp = String.fromCodePoint(name.codePointAt(0));
+		prefix += cp;
+		name = name.slice(cp.length);
+	}
+
+	const has = prefix.includes(indicator);
+	const want = (set === undefined) ? !has : set === true;
+
+	if (want === has) {
+		return Promise.resolve();
+	} else if (want) {
+		prefix += indicator;
+	} else {
+		prefix = prefix.split(indicator).join('');
+	}
+
+	const newName = prefix + name;
+	if (newName === channel.name) {
+		return Promise.resolve();
+	}
+
+	return channel.setName(newName).catch(console.log);
+}
+
+const red_dot = String.fromCodePoint(0x1F534);
+
+function setChannelRecordingIndicator(channel, set) {
 	if (channel.members.some(m => m.user.bot === true)) {
 		set = true;
 	}
-
-	if (channel.name.codePointAt(0) == 128308) {
-		if (set === false || set === undefined) {
-			name = channel.name.slice(2);
-		}
-	} else {
-		if (set === true || set === undefined) {
-			name = String.fromCodePoint(128308) + channel.name;
-		}
-	}
-	if (name === null) {
-		return Promise.resolve();
-	}
-	return channel.setName(name).catch(console.log);
+	return setChannelIndicator(channel, red_dot, set);
 }
 global.setChannelRecordingIndicator = setChannelRecordingIndicator;
+
+const green_dot = String.fromCodePoint(0x1F7E2);
+
+function setChannelPublicIndicator(channel, set) {
+	return setChannelIndicator(channel, green_dot, set);
+}
+global.setChannelPublicIndicator = setChannelPublicIndicator;
 
 /*
 //retrieve a webhook directly from the discord API 

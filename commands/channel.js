@@ -644,7 +644,9 @@ module.exports = {
 				let role = null;
 				let level = 'role';
 				let type = null;
+				let is_public = false;
 				if (subCommand == 'set_jtc_public') {
+					is_public = true;
 					if (channelInfo.details.division && channelInfo.details.division.role) {
 						role = channelInfo.details.division.role;
 						channelInfo.perm = 'role';
@@ -687,9 +689,10 @@ module.exports = {
 				}
 
 				return global.setChannelPerms(guild, interaction, member, perm, channel, type, level, category, channelInfo.details.officer.role, role, creator)
-					.then(async function() {
+					.then(function() {
 						const buttons = getJTCButtons(channelInfo, member);
-						await interaction.message.edit({ components: buttons });
+						global.setChannelPublicIndicator(channel, is_public);
+						interaction.message.edit({ components: buttons });
 					});
 			}
 			case 'set_jtc_status': {
