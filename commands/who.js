@@ -256,7 +256,7 @@ module.exports = {
 				}
 				if (userData.length == 1) {
 					embed.image = {
-						url: `${global.config.trackerURL}/members/${data.id}/my-awards.png`
+						url: `${global.config.trackerURL}/members/${data.id}/my-awards-transparent.png`
 					};
 				}
 			}
