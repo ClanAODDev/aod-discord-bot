@@ -30,7 +30,7 @@ app.use(function(req, res, next) {
 });
 
 //check Authorization header
-app.all('*', (req, res, next) => {
+app.all(/.*/, (req, res, next) => {
 	//all responses are json
 	res.type('application/json');
 	req.client_ip = /*req.headers['x-forwarded-for'] ||*/ req.socket.remoteAddress;
@@ -55,7 +55,7 @@ const apiRouter = express.Router();
 app.use('/api', apiRouter);
 
 //ensure discord is ready before calling any APIs
-apiRouter.all('*', (req, res, next) => {
+apiRouter.all(/.*/, (req, res, next) => {
 	if (!global.client || !global.client.isReady()) {
 		return res.status(503).send({ error: 'Discord client not ready' });
 	} else {
@@ -472,12 +472,12 @@ emojiRouter.get('/', async (req, res, next) => {
 ////////////////////////////
 
 //respond 404 to unprocessed get request
-apiRouter.get('*', (req, res, next) => {
+apiRouter.get(/.*/, (req, res, next) => {
 	return res.status(404).send({ error: 'No endpoint' });
 });
 
 //respond 400 to all other unprocessed requests
-apiRouter.all('*', (req, res, next) => {
+apiRouter.all(/.*/, (req, res, next) => {
 	return res.status(400).send({ error: 'No endpoint' });
 });
 

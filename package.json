@@ -7,7 +7,7 @@
     "@discordjs/rest": "^2.0.1",
     "discord-api-types": "^0.38.26",
     "discord.js": "^14.7.1",
-    "express": "^4.21.2",
+    "express": "^5.2.1",
     "html-entities": "^2.3.3",
     "md5": "^2.3.0",
     "mysql2": "^3.15.1",
