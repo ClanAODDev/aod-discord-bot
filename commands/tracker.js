@@ -19,7 +19,7 @@ module.exports = {
 		.addSubcommand(command => command.setName('reports').setDescription('Run a Tracker report')
 			.addStringOption(option => option.setName('name').setDescription('Report name').setRequired(true)
 				.addChoices(
-					{ name: 'SGT Trainings', value: 'sgt-trainings' },
+					{ name: 'SGT Trainings', value: 'sgt-training' },
 				))),
 	help: true,
 	checkPerm(perm, commandName, parentName) {
