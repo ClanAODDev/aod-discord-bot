@@ -15,7 +15,12 @@ module.exports = {
 			.addSubcommand(command => command.setName('discord').setDescription('Search for members in AOD Tracker by Discord username')
 				.addStringOption(option => option.setName('username').setDescription('Discord Username').setRequired(true))))
 		.addSubcommand(command => command.setName('division').setDescription('Query basic division information')
-			.addStringOption(option => option.setName('name').setDescription('Division name or abbreviation').setRequired(true))),
+			.addStringOption(option => option.setName('name').setDescription('Division name or abbreviation').setRequired(true)))
+		.addSubcommand(command => command.setName('reports').setDescription('Run a Tracker report')
+			.addStringOption(option => option.setName('name').setDescription('Report name').setRequired(true)
+				.addChoices(
+					{ name: 'SGT Trainings', value: 'sgt-trainings' },
+				))),
 	help: true,
 	checkPerm(perm, commandName, parentName) {
 		if (parentName === 'search') {
@@ -27,9 +32,10 @@ module.exports = {
 			}
 		} else {
 			switch (commandName) {
-				case 'tracker':
 				case 'division':
 					return perm >= global.PERM_MEMBER;
+				case 'reports':
+					return perm >= global.PERM_MOD;
 			}
 		}
 		return false;
@@ -46,6 +52,11 @@ module.exports = {
 			switch (subCommand) {
 				case 'division': {
 					trackerCommand = 'division';
+					value = interaction.options.getString('name');
+					break;
+				}
+				case 'reports': {
+					trackerCommand = 'reports';
 					value = interaction.options.getString('name');
 					break;
 				}
@@ -71,7 +82,8 @@ module.exports = {
 			trackerURL.searchParams.append('token', global.config.trackerToken);
 			if (field)
 				trackerURL.searchParams.append('field', field);
-			trackerURL.searchParams.append('value', value);
+			if (value !== undefined)
+				trackerURL.searchParams.append('value', value);
 			let response = await fetch(trackerURL, {
 				method: 'GET',
 				headers: {
