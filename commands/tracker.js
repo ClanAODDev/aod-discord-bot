@@ -82,8 +82,7 @@ module.exports = {
 			trackerURL.searchParams.append('token', global.config.trackerToken);
 			if (field)
 				trackerURL.searchParams.append('field', field);
-			if (value !== undefined)
-				trackerURL.searchParams.append('value', value);
+			trackerURL.searchParams.append('value', value);
 			let response = await fetch(trackerURL, {
 				method: 'GET',
 				headers: {
