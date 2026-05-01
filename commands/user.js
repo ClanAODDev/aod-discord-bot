@@ -74,8 +74,11 @@ module.exports = {
 					.addComponents(cancel, confirm);
 				const response = await global.ephemeralReply(interaction, {
 					content: `Are you sure you want to kick ${targetMember} from the server?`,
-					components: [row]
+					components: [row],
+					fetchReply: true
 				});
+				if (!response)
+					return global.ephemeralReply(interaction, 'Failed to create kick confirmation.', true);
 
 				const filter = (i) => (i.customId === 'confirm_user_kick' || i.customId === 'cancel_user_kick') && i.user.id === interaction.user.id;
 				try {
@@ -133,8 +136,10 @@ module.exports = {
 				const response = await global.ephemeralReply(interaction, {
 					content: `Are you sure you want to ban ${userToBan} from the server?`,
 					components: [row],
-					flags: MessageFlags.Ephemeral
+					fetchReply: true
 				});
+				if (!response)
+					return global.ephemeralReply(interaction, 'Failed to create ban confirmation.', true);
 
 				const filter = (i) => (i.customId === 'confirm_user_ban' || i.customId === 'cancel_user_ban') && i.user.id === interaction.user.id;
 				try {
