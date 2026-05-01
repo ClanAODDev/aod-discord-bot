@@ -50,7 +50,8 @@ module.exports = {
 		if (targetMember) {
 			// Validate caller has permissions to kick/ban target if they are a member of the server
 			let targetPerm = global.getPermissionLevelForMember(guild, targetMember);
-			if (!targetMember.kickable || perm <= targetPerm)
+			let manageable = subCommand === 'ban' ? targetMember.bannable : targetMember.kickable;
+			if (!manageable || perm <= targetPerm)
 				return global.ephemeralReply(interaction, `You do not have permissions to ${subCommand} ${targetMember}.`);
 		}
 
@@ -80,13 +81,29 @@ module.exports = {
 				try {
 					const confirmation = await response.awaitMessageComponent({ filter: filter, time: 10000 });
 					if (confirmation.customId === 'confirm_user_kick') {
-						await targetMember.kick(`Requested by ${global.getNameFromMessage(interaction)}: ${reason}`)
-							.catch(error => global.ephemeralReply(interaction, `Sorry, I couldn't kick because of : ${error}`));
 						await confirmation.update({
-							content: `${targetMember} has been kicked for: ${reason}`,
+							content: `Kicking ${targetMember}...`,
 							components: []
-						}).catch(() => {});
-						await global.sendGlobalNotification(guild, `${targetMember} has been kicked by ${member} for: ${reason}`);
+						});
+						try {
+							await targetMember.kick(`Requested by ${global.getNameFromMessage(interaction)}: ${reason}`);
+							await interaction.editReply({
+								content: `${targetMember} has been kicked for: ${reason}`,
+								components: []
+							});
+						} catch (error) {
+							console.log(error);
+							await interaction.editReply({
+								content: `Failed to kick ${targetMember}.`,
+								components: []
+							});
+							return Promise.resolve();
+						}
+						try {
+							await global.sendGlobalNotification(guild, `${targetMember} has been kicked by ${member} for: ${reason}`);
+						} catch (error) {
+							console.log(error);
+						}
 					} else if (confirmation.customId === 'cancel_user_kick') {
 						await confirmation.update({
 							content: 'Kick request cancelled',
@@ -94,7 +111,7 @@ module.exports = {
 						});
 					}
 				} catch (e) {
-					await interaction.editReply({ content: 'Timeout waiting for confirmation', components: [], flags: MessageFlags.Ephemeral });
+					await interaction.editReply({ content: 'Timeout waiting for confirmation', components: [] });
 				}
 				return Promise.resolve();
 			}
@@ -123,13 +140,29 @@ module.exports = {
 				try {
 					const confirmation = await response.awaitMessageComponent({ filter: filter, time: 10000 });
 					if (confirmation.customId === 'confirm_user_ban') {
-						await guild.members.ban(userToBan, { reason: `Requested by ${global.getNameFromMessage(interaction)}: ${reason}`, deleteMessageSeconds: purgeDuration })
-							.catch(error => global.ephemeralReply(interaction, `Sorry, I couldn't ban because of : ${error}`));
 						await confirmation.update({
-							content: `${userToBan} has been banned for: ${reason}`,
+							content: `Banning ${userToBan}...`,
 							components: []
-						}).catch(() => {});
-						await global.sendGlobalNotification(guild, `${userToBan} has been banned by ${member} for: ${reason}`);
+						});
+						try {
+							await guild.members.ban(userToBan, { reason: `Requested by ${global.getNameFromMessage(interaction)}: ${reason}`, deleteMessageSeconds: purgeDuration });
+							await interaction.editReply({
+								content: `${userToBan} has been banned for: ${reason}`,
+								components: []
+							});
+						} catch (error) {
+							console.log(error);
+							await interaction.editReply({
+								content: `Failed to ban ${userToBan}`,
+								components: []
+							});
+							return Promise.resolve();
+						}
+						try {
+							await global.sendGlobalNotification(guild, `${userToBan} has been banned by ${member} for: ${reason}`);
+						} catch (error) {
+							console.log(error);
+						}
 					} else if (confirmation.customId === 'cancel_user_ban') {
 						await confirmation.update({
 							content: 'Ban request cancelled',
@@ -137,7 +170,7 @@ module.exports = {
 						});
 					}
 				} catch (e) {
-					await interaction.editReply({ content: 'Timeout waiting for confirmation', components: [], flags: MessageFlags.Ephemeral });
+					await interaction.editReply({ content: 'Timeout waiting for confirmation', components: [] });
 				}
 				return Promise.resolve();
 			}
