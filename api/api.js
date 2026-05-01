@@ -13,12 +13,43 @@ app.use(express.json({
 	}
 })); //parse application/json input data
 
-
 function logRequest() {
 	let src = this.client_ip;
 	if (this.reqMember)
 		src = src + ' ' + this.reqMember.user.tag;
 	console.log(`API: [${src}] ${this.res.statusCode} ${this.method} ${this.baseUrl}${this.path} ${this.res.statusMessage}`);
+}
+
+function sendDiscordError(res, err, error, statusCode = 500) {
+	console.log(err);
+
+	let rawError = err.rawError || {};
+	let response = { error: error };
+
+	if (rawError.code !== undefined)
+		response.code = rawError.code;
+	else if (err.code !== undefined)
+		response.code = err.code;
+
+	if (rawError.message)
+		response.message = rawError.message;
+	else if (err.message)
+		response.message = err.message;
+
+	if (rawError.errors)
+		response.errors = rawError.errors;
+	if (err.status)
+		response.status = err.status;
+	if (err.method)
+		response.method = err.method;
+	if (err.url)
+		response.url = err.url;
+
+	return res.status(statusCode).send(response);
+}
+
+function isDiscordError(err) {
+	return err && (err.rawError || (err.status && err.method && err.url));
 }
 
 //WARNING: handlers are processed in the order of definition
@@ -85,7 +116,10 @@ messageRouter.param('message_id', async (req, res, next, message_id) => {
 	} else if (!req.channel.isTextBased()) {
 		return res.status(400).send({ error: 'Channel must be text based' });
 	} else {
-		let message = await req.channel.messages.fetch(message_id).catch(() => {});
+		let message;
+		try {
+			message = await req.channel.messages.fetch(message_id);
+		} catch (err) {}
 		if (!message) {
 			return res.status(404).send({ error: 'Unknown message' });
 		} else {
@@ -98,7 +132,7 @@ messageRouter.param('message_id', async (req, res, next, message_id) => {
 const unicodeRegEx = /&#([0-9]+);/g; //BE CAREFUL OF CAPTURE GROUPS BELOW
 const unicodeHexRegEx = /&#x([0-9a-fA-F]+);/g; //BE CAREFUL OF CAPTURE GROUPS BELOW
 messageRouter.post('/:message_id/react', async (req, res, next) => {
-	let emjoiId;
+	let emojiId;
 	if (!req.body.emoji) {
 		return res.status(400).send({ error: 'emoji must be provided' });
 	} else {
@@ -128,7 +162,7 @@ messageRouter.post('/:message_id/react', async (req, res, next) => {
 			if (emojiId)
 				emojiId = decodeURIComponent(emojiId);
 		} else {
-			emjoiId = emoji.id;
+			emojiId = emoji.id;
 		}
 		if (!emojiId) {
 			return res.status(404).send({ error: 'Unknown emoji' });
@@ -137,19 +171,25 @@ messageRouter.post('/:message_id/react', async (req, res, next) => {
 				if (req.message.author.id !== global.client.user.id) {
 					return res.status(403).send({ error: 'Cannot clear reactions on messages authored by other users' });
 				}
-				await req.message.reactions.removeAll();
-				let reaction = await req.message.react(emojiId).catch((err) => {});
-				if (!reaction) {
-					return res.status(500).send({ error: `Failed to add reaction` });
+				try {
+					await req.message.reactions.removeAll();
+					await req.message.react(emojiId);
+				} catch (err) {
+					return sendDiscordError(res, err, 'Failed to add reaction');
 				}
 			} else {
 				let reaction = req.message.reactions.cache.get(emojiId);
 				if (reaction && reaction.users.resolve(global.client.user.id)) {
-					await reaction.users.remove(global.client.user.id).catch(() => {});
+					try {
+						await reaction.users.remove(global.client.user.id);
+					} catch (err) {
+						return sendDiscordError(res, err, 'Failed to remove reaction');
+					}
 				} else {
-					reaction = await req.message.react(emojiId).catch((err) => {});
-					if (!reaction) {
-						return res.status(500).send({ error: `Failed to add reaction` });
+					try {
+						await req.message.react(emojiId);
+					} catch (err) {
+						return sendDiscordError(res, err, 'Failed to add reaction');
 					}
 				}
 			}
@@ -169,18 +209,22 @@ messageRouter.get('/:message_id', (req, res, next) => {
 	});
 });
 
-messageRouter.put('/:message_id', (req, res, next) => {
+messageRouter.put('/:message_id', async (req, res, next) => {
 
 	if (req.message.author.id !== global.client.user.id) {
 		return res.status(403).send({ error: 'Cannot edit messages authored by other users' });
 	} else if (!req.body.content && !req.body.embeds) {
 		return res.status(400).send({ error: 'content or embeds must be provided' });
 	} else {
-		req.message.edit({
-			content: req.body.content,
-			embeds: req.body.embeds
-		});
-		return res.send({ id: req.message.id });
+		try {
+			let message = await req.message.edit({
+				content: req.body.content,
+				embeds: req.body.embeds
+			});
+			return res.send({ id: message.id });
+		} catch (err) {
+			return sendDiscordError(res, err, 'Failed to edit message');
+		}
 	}
 });
 
@@ -188,8 +232,12 @@ messageRouter.delete('/:message_id', async (req, res, next) => {
 	if (req.message.author.id !== global.client.user.id) {
 		return res.status(403).send({ error: 'Cannot delete messages authored by other users' });
 	} else {
-		await req.message.delete().catch(() => {});
-		return res.send({ id: req.message.id });
+		try {
+			await req.message.delete();
+			return res.send({ id: req.message.id });
+		} catch (err) {
+			return sendDiscordError(res, err, 'Failed to delete message');
+		}
 	}
 });
 
@@ -286,16 +334,14 @@ channelRouter.post('/:channel_id', async (req, res, next) => {
 	if (!req.body.content && !req.body.embeds) {
 		return res.status(400).send({ error: 'content or embeds must be provided' });
 	} else {
-		let message = await req.channel.send({
-			content: req.body.content,
-			embeds: req.body.embeds
-		}).catch((err) => {
-			console.log(err);
-		});
-		if (message) {
+		try {
+			let message = await req.channel.send({
+				content: req.body.content,
+				embeds: req.body.embeds
+			});
 			return res.send({ id: message.id });
-		} else {
-			return res.status(500).send({ error: 'Failed to send message' });
+		} catch (err) {
+			return sendDiscordError(res, err, 'Failed to send message');
 		}
 	}
 });
@@ -311,8 +357,8 @@ apiRouter.use('/roles', roleRouter);
 function getRole(guild, role_id) {
 	let role = guild.roles.resolve(role_id);
 	if (!role)
-		member = guild.roles.cache.find(r => r.name === role_id);
-	return member;
+		role = guild.roles.cache.find(r => r.name === role_id);
+	return role;
 }
 
 roleRouter.param('role_id', (req, res, next, role_id) => {
@@ -401,26 +447,29 @@ memberRouter.get('/:member_id', async (req, res, next) => {
 });
 
 memberRouter.get('/:member_id/update', async (req, res, next) => {
-	global.setRolesForMember(req.guild, req.member, `Requested by ${req.reqMember ?? 'API'}`)
-		.then((roles) => res.send({
+	try {
+		let roles = await global.setRolesForMember(req.guild, req.member, `Requested by ${req.reqMember ?? 'API'}`);
+		return res.send({
 			id: req.member.id,
 			roles: roles.map(r => { return { id: r.id, name: r.name }; })
-		}))
-		.catch(() => res.status(500).send({ error: 'Failed to run member update' }));
+		});
+	} catch (err) {
+		return sendDiscordError(res, err, 'Failed to run member update');
+	}
 });
 
 memberRouter.post('/:member_id', async (req, res, next) => {
 	if (!req.body.content && !req.body.embeds) {
 		return res.status(400).send({ error: 'content or embeds must be provided' });
 	} else {
-		let message = await req.member.send({
-			content: req.body.content,
-			embeds: req.body.embeds
-		}).catch((err) => { console.log(err); });
-		if (message) {
+		try {
+			let message = await req.member.send({
+				content: req.body.content,
+				embeds: req.body.embeds
+			});
 			return res.send({ id: message.id });
-		} else {
-			return res.status(500).send({ error: 'Failed to send message' });
+		} catch (err) {
+			return sendDiscordError(res, err, 'Failed to send message');
 		}
 	}
 });
@@ -479,6 +528,17 @@ apiRouter.get(/.*/, (req, res, next) => {
 //respond 400 to all other unprocessed requests
 apiRouter.all(/.*/, (req, res, next) => {
 	return res.status(400).send({ error: 'No endpoint' });
+});
+
+app.use((err, req, res, next) => {
+	if (res.headersSent) {
+		return next(err);
+	}
+	if (isDiscordError(err)) {
+		return sendDiscordError(res, err, 'Discord request failed');
+	}
+	console.log(err);
+	return res.status(500).send({ error: 'Internal server error' });
 });
 
 module.exports = {

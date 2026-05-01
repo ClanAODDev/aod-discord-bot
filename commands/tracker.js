@@ -18,9 +18,7 @@ module.exports = {
 			.addStringOption(option => option.setName('name').setDescription('Division name or abbreviation').setRequired(true)))
 		.addSubcommand(command => command.setName('reports').setDescription('Run a Tracker report')
 			.addStringOption(option => option.setName('name').setDescription('Report name').setRequired(true)
-				.addChoices(
-					{ name: 'SGT Trainings', value: 'sgt-training' },
-				))),
+				.addChoices({ name: 'SGT Trainings', value: 'sgt-training' }, ))),
 	help: true,
 	checkPerm(perm, commandName, parentName) {
 		if (parentName === 'search') {
