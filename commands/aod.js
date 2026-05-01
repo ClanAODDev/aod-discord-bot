@@ -10,6 +10,9 @@ module.exports = {
 	async execute(interaction, guild, member, perm) {
 		//get command and argument string
 		const input = interaction.options.getString('command');
+		if (!input)
+			return global.ephemeralReply(interaction, 'Command is required.');
+
 		let first_space = input.indexOf(' ');
 		let command, arg_string;
 		if (first_space < 0) {

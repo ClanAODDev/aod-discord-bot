@@ -279,16 +279,23 @@ module.exports = {
 				const response = await interaction.reply({
 					content: `Are you sure you want to delete ${channel}?`,
 					components: [row],
-					flags: MessageFlags.Ephemeral
+					flags: MessageFlags.Ephemeral,
+					fetchReply: true
 				});
+				if (!response)
+					return global.ephemeralReply(interaction, 'Failed to create delete confirmation.', true);
 
 				const filter = (i) => (i.customId === 'confirm_channel_delete' || i.customId === 'cancel_channel_delete') && i.user.id === interaction.user.id;
 				try {
 					const confirmation = await response.awaitMessageComponent({ filter: filter, time: 10000 });
 					if (confirmation.customId === 'confirm_channel_delete') {
+						await confirmation.update({
+							content: `Deleting #${channelName}...`,
+							components: []
+						});
 						await channel.delete(`Requested by ${global.getNameFromMessage(interaction)}`);
 						if (interaction.channel.id !== channel.id) {
-							await confirmation.update({
+							await interaction.editReply({
 								content: `Channel #${channelName} deleted`,
 								components: []
 							});
@@ -504,8 +511,11 @@ module.exports = {
 				const response = await interaction.reply({
 					content: `Move ${channel}...`,
 					components: [row],
-					flags: MessageFlags.Ephemeral
+					flags: MessageFlags.Ephemeral,
+					fetchReply: true
 				});
+				if (!response)
+					return global.ephemeralReply(interaction, 'Failed to create move controls.', true);
 
 				const filter = (i) =>
 					(i.customId === 'move_channel_up' ||
