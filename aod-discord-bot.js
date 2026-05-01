@@ -277,7 +277,10 @@ function sendInteractionReply(interaction, data, edit) {
 		return interaction.editReply(data).catch(() => {});
 	} else {
 		return interaction.reply(data)
-			.then(() => { interaction.replied = true; })
+			.then((response) => {
+				interaction.replied = true;
+				return response;
+			})
 			.catch(() => {});
 	}
 }
