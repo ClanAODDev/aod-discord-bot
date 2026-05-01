@@ -302,6 +302,7 @@ module.exports = {
 				while (1) {
 					const confirmation = await response.awaitMessageComponent({ filter: filter, time: 15000 });
 					console.log(`${getNameFromMessage(interaction)} executed: button:who:${confirmation.customId}:${targetMember.id}`);
+					await confirmation.deferUpdate();
 					switch (confirmation.customId) {
 						case 'send_invite': {
 							let invite = await member.voice.channel.createInvite({
@@ -368,7 +369,7 @@ module.exports = {
 						}
 					}
 					components = getComponentsForTarget(member, perm, targetMember, targetPerm);
-					confirmation.update({ components: components });
+					await interaction.editReply({ components: components });
 					if (!components.length) {
 						break;
 					}

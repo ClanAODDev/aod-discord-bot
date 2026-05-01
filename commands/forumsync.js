@@ -56,18 +56,25 @@ module.exports = {
 				await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 				let forumGroups = await global.getForumGroups()
 					.catch(console.log);
+				if (!forumGroups)
+					return global.ephemeralReply(interaction, 'Failed to load forum groups');
+
 				var fields = [];
-				Object.keys(global.forumIntegrationConfig).forEach(async function(roleName) {
+				for (const roleName of Object.keys(global.forumIntegrationConfig)) {
 					var groupMap = global.forumIntegrationConfig[roleName];
+					var groupNames = [];
+					for (const groupID of groupMap.forumGroups) {
+						groupNames.push(`${forumGroups[groupID]} (${groupID})`);
+					}
 					fields.push({
 						name: roleName + (groupMap.permanent ? ' (permanent)' : ''),
-						value: groupMap.forumGroups.map(groupID => `${forumGroups[groupID]} (${groupID})`).join(', ')
+						value: groupNames.join(', ')
 					});
 					if (fields.length >= 25) {
 						await global.ephemeralReply(interaction, { embeds: [{ title: 'Configured Group Maps', fields: fields }] });
 						fields = [];
 					}
-				});
+				}
 
 				if (fields.length > 0) {
 					await global.ephemeralReply(interaction, { embeds: [{ title: 'Configured Group Maps', fields: fields }] });
