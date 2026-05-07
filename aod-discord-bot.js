@@ -182,42 +182,47 @@ function getRolesByForumGroup(guild, doUpdate) {
 	return rolesByForumGroup;
 }
 
-//initialize and return the mysql database connection 
-var mysql = require('mysql2');
-var mysqlConnection = null;
+//initialize mysql database pool
+const mysql = require('mysql2');
+const mysqlPool = mysql.createPool({
+	waitForConnections: true,
+	connectionLimit: 10,
+	...config.mysql.config
+});
+const mysqlPromisePool = mysqlPool.promise();
 
-function connectToDB() {
-	if (mysqlConnection !== null) {
-		let alive = true;
-		mysqlConnection.ping(error => {
-			if (error) {
-				alive = false;
-			}
-		});
-		if (alive) {
-			return mysqlConnection;
+async function queryDB(query, params = []) {
+	const [rows] = await mysqlPromisePool.query(query, params);
+	return rows;
+}
+
+function streamQueryDB(query, params = [], onRow) {
+	return new Promise(function(resolve, reject) {
+		let queryStream = mysqlPool.query(query, params).stream({ objectMode: true });
+		let finished = false;
+		function rejectOnce(error) {
+			if (finished)
+				return;
+			finished = true;
+			if (!queryStream.destroyed)
+				queryStream.destroy();
+			reject(error);
 		}
-	}
-	mysqlConnection = mysql.createConnection(config.mysql.config);
-	mysqlConnection.connect(error => {
-		if (error) {
-			console.log(error);
-		}
+		queryStream
+			.on('error', rejectOnce)
+			.on('data', function(row) {
+				queryStream.pause();
+				Promise.resolve(onRow(row))
+					.then(() => queryStream.resume())
+					.catch(rejectOnce);
+			})
+			.on('end', function() {
+				if (finished)
+					return;
+				finished = true;
+				resolve();
+			});
 	});
-	mysqlConnection
-		.on('close', error => {
-			if (error) {
-				console.log(error);
-				connectToDB();
-			}
-		})
-		.on('error', error => {
-			console.log(error);
-			if (error.code === 'PROTOCOL_CONNECTION_LOST') {
-				connectToDB();
-			}
-		});
-	return mysqlConnection;
 }
 
 //get a name to use for logging purposes
@@ -946,42 +951,27 @@ function commandReminder(message, member, cmd, args, guild, perm, isDM) {
 	}
 }
 
-function getLoginToken(member) {
-	let promise = new Promise(function(resolve, reject) {
-		let db = connectToDB();
-		let currEpoch = ((new Date()).getTime()) / 1000;
-		let validEpoch = currEpoch - 15 * 60; //15 minutes
+async function getLoginToken(member) {
+	let currEpoch = ((new Date()).getTime()) / 1000;
+	let validEpoch = currEpoch - 15 * 60; //15 minutes
 
-		let query =
-			`SELECT token, create_time ` +
-			`FROM ${config.mysql.discordPrefix}discord_login_tokens ` +
-			`WHERE used = 0 AND create_time > ${validEpoch} ` +
-			`  AND discord_id="${member.id}"`;
-		db.query(query, function(err, rows, fields) {
-			if (err) {
-				console.log(err);
-				return reject();
-			}
-			if (rows.length)
-				return resolve(rows[0].token);
-			//no existing token
-			let token = md5(currEpoch + member.id + Math.random().toString());
-			let tag = db.escape(convertDiscordTag(member.user.tag));
-			query =
-				`INSERT INTO ${config.mysql.discordPrefix}discord_login_tokens ` +
-				`  (token, create_time, discord_tag, discord_id, used) ` +
-				`VALUES ` +
-				`  ("${token}",${currEpoch},${tag},"${member.user.id}",0)`;
-			db.query(query, function(err, results, fields) {
-				if (err) {
-					console.log(err);
-					return reject();
-				}
-				resolve(token);
-			});
-		});
-	});
-	return promise;
+	let query =
+		`SELECT token, create_time ` +
+		`FROM ${config.mysql.discordPrefix}discord_login_tokens ` +
+		`WHERE used = 0 AND create_time > ? ` +
+		`  AND discord_id = ?`;
+	let rows = await queryDB(query, [validEpoch, member.id]);
+	if (rows.length)
+		return rows[0].token;
+
+	let token = md5(currEpoch + member.id + Math.random().toString());
+	query =
+		`INSERT INTO ${config.mysql.discordPrefix}discord_login_tokens ` +
+		`  (token, create_time, discord_tag, discord_id, used) ` +
+		`VALUES ` +
+		`  (?, ?, ?, ?, 0)`;
+	await queryDB(query, [token, currEpoch, convertDiscordTag(member.user.tag), member.user.id]);
+	return token;
 }
 global.getLoginToken = getLoginToken;
 
@@ -1004,73 +994,65 @@ async function userLogin(message, member, guild, username, password) {
 		}
 	}
 
-	let promise = new Promise(function(resolve, reject) {
-		let db = connectToDB();
-		let password_md5 = db.escape(md5(password));
-		let esc_username = db.escape(username);
-		let query = `CALL check_user(${esc_username},${password_md5})`;
-		db.query(query, async function(err, results, fields) {
-			let success = false;
-			if (!err) {
-				//rows[i].userid
-				//rows[i].username
-				//rows[i].valid
-				//should never be more than 1 user...
-				if (results && results.length && results[0].length) {
-					let data = results[0][0];
-					if (data && data.valid == 1) {
-						success = true;
-						let tag = db.escape(convertDiscordTag(member.user.tag));
-						let discordId = db.escape(member.user.id);
-						let query2 =
-							`SELECT u.userid,u.username FROM ${config.mysql.prefix}userfield f ` +
-							`INNER JOIN ${config.mysql.prefix}user u ON f.userid=u.userid ` +
-							`WHERE (f.field19=${tag} OR f.field20=${discordId}) AND f.userid!=${data.userid}`;
-						db.query(query2, async function(err, rows2, fields) {
-							if (rows2 && rows2.length) {
-								let data2 = rows2[0];
-								const notificationChannel = guild.channels.cache.find(c => { return c.name === config.globalNotificationChannel; });
-								console.log(`Existing forum account found ${data2.username} ${data2.userid}`);
-								if (notificationChannel) {
-									await notificationChannel.send(`${member.user.tag} logged in as ${data.username} but was already known as ${data2.username}`).catch(() => {});
-								}
-								query2 = `UPDATE ${config.mysql.prefix}userfield SET field19='',field20='' WHERE userid=${data2.userid}`;
-								db.query(query2);
-							}
-						});
+	let query = `CALL check_user(?, ?)`;
+	let results = await queryDB(query, [username, md5(password)]);
+	let success = false;
 
-						query2 = `UPDATE ${config.mysql.prefix}userfield SET field19=${tag},field20=${discordId} WHERE userid=${data.userid}`;
-						db.query(query2, async function(err, rows2, fields) {
-							if (err) {
-								await sendReplyToMessageAuthor(message, member, `Successfully logged in as ${data.username} (${data.userid}), but there was an error updating your user infomation.`);
-								console.log(err);
-								return reject(err);
-							}
-							console.log(`${member.user.tag} logged in as ${data.username} (${data.userid})`);
-							let msg = `Successfully logged in as ${data.username} (${data.userid}).`;
-							if (!message.isInteraction && !message.channel.isDMBased())
-								msg += ` We recommend you delete the \`${config.prefix}login\` message from your history to protect your identity.`;
-							await sendReplyToMessageAuthor(message, member, msg);
-							await setRolesForMember(guild, member, "Forum login");
-							return resolve();
-						});
-					}
+	//rows[i].userid
+	//rows[i].username
+	//rows[i].valid
+	//should never be more than 1 user...
+	if (results && results.length && results[0].length) {
+		let data = results[0][0];
+		if (data && data.valid == 1) {
+			success = true;
+			let tag = convertDiscordTag(member.user.tag);
+			let discordId = member.user.id;
+			let query2 =
+				`SELECT u.userid,u.username FROM ${config.mysql.prefix}userfield f ` +
+				`INNER JOIN ${config.mysql.prefix}user u ON f.userid=u.userid ` +
+				`WHERE (f.field19 = ? OR f.field20 = ?) AND f.userid != ?`;
+			let rows2 = await queryDB(query2, [tag, discordId, data.userid]);
+			if (rows2 && rows2.length) {
+				let data2 = rows2[0];
+				const notificationChannel = guild.channels.cache.find(c => { return c.name === config.globalNotificationChannel; });
+				console.log(`Existing forum account found ${data2.username} ${data2.userid}`);
+				if (notificationChannel) {
+					await notificationChannel.send(`${member.user.tag} logged in as ${data.username} but was already known as ${data2.username}`).catch(() => {});
 				}
+				query2 = `UPDATE ${config.mysql.prefix}userfield SET field19 = '', field20 = '' WHERE userid = ?`;
+				await queryDB(query2, [data2.userid]);
 			}
-			if (!success) {
-				//track login errors
-				if (loginErrorsByUserID[member.user.id] === undefined)
-					loginErrorsByUserID[member.user.id] = { epochMs: 0, count: 0 };
-				loginErrorsByUserID[member.user.id].epochMs = (new Date()).getTime();
-				loginErrorsByUserID[member.user.id].count++;
 
-				console.log(`${member.user.tag} login failed for ${username} (count: ${loginErrorsByUserID[member.user.id].count})`);
-				await sendReplyToMessageAuthor(message, member, `Login failed for ${username}.`);
-				return reject();
+			query2 = `UPDATE ${config.mysql.prefix}userfield SET field19 = ?, field20 = ? WHERE userid = ?`;
+			try {
+				await queryDB(query2, [tag, discordId, data.userid]);
+			} catch (err) {
+				await sendReplyToMessageAuthor(message, member, `Successfully logged in as ${data.username} (${data.userid}), but there was an error updating your user infomation.`);
+				console.log(err);
+				throw err;
 			}
-		});
-	});
-	return promise;
+			console.log(`${member.user.tag} logged in as ${data.username} (${data.userid})`);
+			let msg = `Successfully logged in as ${data.username} (${data.userid}).`;
+			if (!message.isInteraction && !message.channel.isDMBased())
+				msg += ` We recommend you delete the \`${config.prefix}login\` message from your history to protect your identity.`;
+			await sendReplyToMessageAuthor(message, member, msg);
+			await setRolesForMember(guild, member, "Forum login");
+			return;
+		}
+	}
+
+	if (!success) {
+		//track login errors
+		if (loginErrorsByUserID[member.user.id] === undefined)
+			loginErrorsByUserID[member.user.id] = { epochMs: 0, count: 0 };
+		loginErrorsByUserID[member.user.id].epochMs = (new Date()).getTime();
+		loginErrorsByUserID[member.user.id].count++;
+
+		console.log(`${member.user.tag} login failed for ${username} (count: ${loginErrorsByUserID[member.user.id].count})`);
+		await sendReplyToMessageAuthor(message, member, `Login failed for ${username}.`);
+		throw new Error('Login failed');
+	}
 }
 global.userLogin = userLogin;
 
@@ -2812,26 +2794,16 @@ function commandShowWebhooks(message, member, cmd, args, guild, perm, isDM)
 }*/
 
 //get forum groups from forum database
-function getForumGroups() {
-	var promise = new Promise(function(resolve, reject) {
-		let db = connectToDB();
-		let query = `SELECT usergroupid AS id,title AS name FROM ${config.mysql.prefix}usergroup ` +
-			`WHERE title LIKE "AOD%" OR title LIKE "%Officers" ` +
-			`OR title LIKE "Division CO" OR title LIKE "Division XO" ` +
-			`OR title LIKE "Registered Users"`;
-		db.query(query, function(err, rows, fields) {
-			if (err)
-				return reject(err);
-			else {
-				let groupsByID = {};
-				for (var i in rows) {
-					groupsByID[rows[i].id] = rows[i].name;
-				}
-				return resolve(groupsByID);
-			}
-		});
+async function getForumGroups() {
+	let query = `SELECT usergroupid AS id,title AS name FROM ${config.mysql.prefix}usergroup ` +
+		`WHERE title LIKE "AOD%" OR title LIKE "%Officers" ` +
+		`OR title LIKE "Division CO" OR title LIKE "Division XO" ` +
+		`OR title LIKE "Registered Users"`;
+	let groupsByID = {};
+	await streamQueryDB(query, [], function(row) {
+		groupsByID[row.id] = row.name;
 	});
-	return promise;
+	return groupsByID;
 }
 global.getForumGroups = getForumGroups;
 
@@ -2884,122 +2856,99 @@ function getDiscordNickname(name, rank) {
 	return name;
 }
 
-function getForumUsersForGroups(groups, allowPending) {
-	var promise = new Promise(function(resolve, reject) {
-		let usersByIDOrDiscriminator = {};
-		let db = connectToDB();
-		let groupStr = groups.join(',');
-		let groupRegex = groups.join('|');
-		let query =
-			`SELECT u.userid,u.username,` +
-			`  IF(f.field19 NOT LIKE "%#%" OR f.field19 LIKE "%#0", LOWER(f.field19), f.field19) AS field19,` +
-			`  f.field20,f.field11,f.field13,f.field23,f.field24,` +
-			`  (CASE WHEN (r.requester_id IS NOT NULL) THEN 1 ELSE 0 END) AS pending, t.name AS pending_name ` +
-			`FROM ${config.mysql.prefix}user AS u ` +
-			`INNER JOIN ${config.mysql.prefix}userfield AS f ON u.userid=f.userid ` +
-			`LEFT JOIN ${config.mysql.trackerPrefix}member_requests AS r ON u.userid=r.member_id AND r.approver_id IS NULL ` +
-			`  AND r.hold_placed_at IS NULL AND r.created_at > (NOW() - INTERVAL 24 HOUR) ` +
-			`LEFT JOIN ${config.mysql.trackerPrefix}members AS t on u.userid=t.clan_id ` +
-			`WHERE ((u.usergroupid IN (${groupStr}) OR u.membergroupids REGEXP '(^|,)(${groupRegex})(,|$)') `;
-		if (allowPending === true) {
-			query +=
-				`OR r.requester_id IS NOT NULL `;
-		} else {
-			query +=
-				`AND r.requester_id IS NULL `;
-		}
+async function getForumUsersForGroups(groups, allowPending) {
+	let usersByIDOrDiscriminator = {};
+	let groupStr = groups.join(',');
+	let groupRegex = groups.join('|');
+	let query =
+		`SELECT u.userid,u.username,` +
+		`  IF(f.field19 NOT LIKE "%#%" OR f.field19 LIKE "%#0", LOWER(f.field19), f.field19) AS field19,` +
+		`  f.field20,f.field11,f.field13,f.field23,f.field24,` +
+		`  (CASE WHEN (r.requester_id IS NOT NULL) THEN 1 ELSE 0 END) AS pending, t.name AS pending_name ` +
+		`FROM ${config.mysql.prefix}user AS u ` +
+		`INNER JOIN ${config.mysql.prefix}userfield AS f ON u.userid=f.userid ` +
+		`LEFT JOIN ${config.mysql.trackerPrefix}member_requests AS r ON u.userid=r.member_id AND r.approver_id IS NULL ` +
+		`  AND r.hold_placed_at IS NULL AND r.created_at > (NOW() - INTERVAL 24 HOUR) ` +
+		`LEFT JOIN ${config.mysql.trackerPrefix}members AS t on u.userid=t.clan_id ` +
+		`WHERE ((u.usergroupid IN (${groupStr}) OR u.membergroupids REGEXP '(^|,)(${groupRegex})(,|$)') `;
+	if (allowPending === true) {
 		query +=
-			`) AND ((f.field19 IS NOT NULL AND f.field19 <> '') OR (f.field20 IS NOT NULL AND f.field20 <> '')) ` +
-			`ORDER BY f.field13,u.username`;
-		let queryError = false;
-		db.query(query)
-			.on('error', function(err) {
-				queryError = true;
-				reject(err);
-			})
-			.on('result', function(row) {
-				let discordid = row.field20;
-				let discordtag = convertForumDiscordName(row.field19);
-				discordTagRegEx.lastIndex = 0;
-				/*if (!discordTagRegEx.exec(discordtag)) {
-					discordtag += '#0';
-				}*/
+			`OR r.requester_id IS NOT NULL `;
+	} else {
+		query +=
+			`AND r.requester_id IS NULL `;
+	}
+	query +=
+		`) AND ((f.field19 IS NOT NULL AND f.field19 <> '') OR (f.field20 IS NOT NULL AND f.field20 <> '')) ` +
+		`ORDER BY f.field13,u.username`;
+	await streamQueryDB(query, [], function(row) {
+		let discordid = row.field20;
+		let discordtag = convertForumDiscordName(row.field19);
+		discordTagRegEx.lastIndex = 0;
+		/*if (!discordTagRegEx.exec(discordtag)) {
+			discordtag += '#0';
+		}*/
 
-				let index = discordtag;
-				let indexIsId = false;
-				if (discordid && discordid != '') {
-					index = discordid;
-					indexIsId = true;
-				}
-				if (usersByIDOrDiscriminator[index] !== undefined) {
-					console.log(`Found duplicate tag ${usersByIDOrDiscriminator[index].discordtag} (${usersByIDOrDiscriminator[index].discordId}) for forum user ${row.username} first seen for forum user ${usersByIDOrDiscriminator[index].name}`);
-				} else {
-					usersByIDOrDiscriminator[index] = {
-						indexIsId: indexIsId,
-						name: row.username,
-						pendingName: row.pending_name,
-						id: row.userid,
-						division: row.field13,
-						rank: row.field11,
-						rankAbbr: getRankAbbr(row.field11),
-						discordNickname: getDiscordNickname(row.pending ? row.pending_name : row.username, row.field11),
-						discordid: discordid,
-						discordtag: discordtag,
-						discordstatus: row.field24,
-						discordactivity: row.field23,
-						pending: row.pending,
-					};
-				}
-			})
-			.on('end', function(err) {
-				if (!queryError)
-					resolve(usersByIDOrDiscriminator);
-			});
+		let index = discordtag;
+		let indexIsId = false;
+		if (discordid && discordid != '') {
+			index = discordid;
+			indexIsId = true;
+		}
+		if (usersByIDOrDiscriminator[index] !== undefined) {
+			console.log(`Found duplicate tag ${usersByIDOrDiscriminator[index].discordtag} (${usersByIDOrDiscriminator[index].discordId}) for forum user ${row.username} first seen for forum user ${usersByIDOrDiscriminator[index].name}`);
+		} else {
+			usersByIDOrDiscriminator[index] = {
+				indexIsId: indexIsId,
+				name: row.username,
+				pendingName: row.pending_name,
+				id: row.userid,
+				division: row.field13,
+				rank: row.field11,
+				rankAbbr: getRankAbbr(row.field11),
+				discordNickname: getDiscordNickname(row.pending ? row.pending_name : row.username, row.field11),
+				discordid: discordid,
+				discordtag: discordtag,
+				discordstatus: row.field24,
+				discordactivity: row.field23,
+				pending: row.pending,
+			};
+		}
 	});
-	return promise;
+	return usersByIDOrDiscriminator;
 }
 
-function getForumInfoForMember(member) {
-	var promise = new Promise(function(resolve, reject) {
-		let userData = [];
-		let db = connectToDB();
-		let query =
-			`SELECT u.userid,u.username,f.field13,f.field11,f.field14,f.field19,f.field20,g.title ` +
-			`FROM ${config.mysql.prefix}user AS u ` +
-			`INNER JOIN ${config.mysql.prefix}userfield AS f ON u.userid=f.userid ` +
-			`INNER JOIN ${config.mysql.prefix}usergroup AS g ON u.usergroupid=g.usergroupid `;
-		if (typeof(member) === 'object') {
-			query += `WHERE f.field20 LIKE "${member.id}" `;
-		} else if (!isNaN(parseInt(member))) {
-			query += `WHERE u.userid=${member} `;
-		} else {
-			let username = db.escape(member);
-			query += `WHERE u.username LIKE ${username} `;
-		}
-		let queryError = false;
-		db.query(query)
-			.on('error', function(err) {
-				queryError = true;
-				reject(err);
-			})
-			.on('result', function(row) {
-				userData.push({
-					name: row.username,
-					id: row.userid,
-					division: row.field13,
-					rank: row.field11,
-					loaStatus: row.field14,
-					forumGroup: row.title,
-					discordtag: row.field19,
-					discordid: row.field20
-				});
-			})
-			.on('end', function(err) {
-				if (!queryError)
-					resolve(userData);
-			});
+async function getForumInfoForMember(member) {
+	let userData = [];
+	let query =
+		`SELECT u.userid,u.username,f.field13,f.field11,f.field14,f.field19,f.field20,g.title ` +
+		`FROM ${config.mysql.prefix}user AS u ` +
+		`INNER JOIN ${config.mysql.prefix}userfield AS f ON u.userid=f.userid ` +
+		`INNER JOIN ${config.mysql.prefix}usergroup AS g ON u.usergroupid=g.usergroupid `;
+	let params = [];
+	if (typeof(member) === 'object') {
+		query += `WHERE f.field20 LIKE ? `;
+		params.push(member.id);
+	} else if (!isNaN(parseInt(member))) {
+		query += `WHERE u.userid = ? `;
+		params.push(member);
+	} else {
+		query += `WHERE u.username LIKE ? `;
+		params.push(member);
+	}
+	await streamQueryDB(query, params, function(row) {
+		userData.push({
+			name: row.username,
+			id: row.userid,
+			division: row.field13,
+			rank: row.field11,
+			loaStatus: row.field14,
+			forumGroup: row.title,
+			discordtag: row.field19,
+			discordid: row.field20
+		});
 	});
-	return promise;
+	return userData;
 }
 global.getForumInfoForMember = getForumInfoForMember;
 
@@ -3083,70 +3032,94 @@ function updateGuildRoles(guild) {
 	return Promise.resolve();
 }
 
-function setDiscordIDForForumUser(forumUser, guildMember) {
+async function setDiscordIDForForumUser(forumUser, guildMember) {
 	if (forumUser.discordid == guildMember.user.id)
-		return;
+		return true;
 	if (config.devMode !== true) {
 		console.log(`Updating Discord ID for ${forumUser.name} (${forumUser.id}) Discord Tag ${guildMember.user.tag} from '${forumUser.discordid}' to '${guildMember.user.id}'`);
-		let db = connectToDB();
-		//let tag = db.escape(convertDiscordTag(guildMember.user.tag));
-		let query = `UPDATE ${config.mysql.prefix}userfield SET field20="${guildMember.user.id}" WHERE userid=${forumUser.id}`;
-		db.query(query, function(err, rows, fields) {});
+		let query = `UPDATE ${config.mysql.prefix}userfield SET field20 = ? WHERE userid = ?`;
+		try {
+			await queryDB(query, [guildMember.user.id, forumUser.id]);
+		} catch (error) {
+			console.error(error);
+			return false;
+		}
 	}
 	forumUser.discordid = guildMember.user.id;
+	return true;
 }
 
-function setDiscordTagForForumUser(forumUser, guildMember) {
+async function setDiscordTagForForumUser(forumUser, guildMember) {
 	if (forumUser.discordtag == guildMember.user.tag)
-		return;
+		return true;
 	//handle the case where someone gave us their ID directly
 	if (forumUser.discordtag == guildMember.user.id) {
 		forumUser.indexIsId = true;
-		setDiscordIDForForumUser(forumUser, guildMember);
+		if (!await setDiscordIDForForumUser(forumUser, guildMember))
+			return false;
 	}
 	if (config.devMode !== true) {
 		console.log(`Updating Discord Tag for ${forumUser.name} (${forumUser.id}) Discord ID ${guildMember.user.id} from '${forumUser.discordtag}' to '${guildMember.user.tag}'`);
-		let db = connectToDB();
-		let tag = db.escape(convertDiscordTag(guildMember.user.tag));
-		let query = `UPDATE ${config.mysql.prefix}userfield SET field19=${tag} WHERE field20="${guildMember.user.id}" AND userid=${forumUser.id}`;
-		db.query(query, function(err, rows, fields) {});
+		let query = `UPDATE ${config.mysql.prefix}userfield SET field19 = ? WHERE field20 = ? AND userid = ?`;
+		try {
+			await queryDB(query, [convertDiscordTag(guildMember.user.tag), guildMember.user.id, forumUser.id]);
+		} catch (error) {
+			console.error(error);
+			return false;
+		}
 	}
 	forumUser.discordtag = guildMember.user.tag;
+	return true;
 }
 
-function setDiscordStatusForForumUser(forumUser, status) {
+async function setDiscordStatusForForumUser(forumUser, status) {
 	if (forumUser.discordstatus === status)
-		return;
+		return true;
 	if (config.devMode !== true) {
 		console.log(`Updating Discord Status for ${forumUser.name} (${forumUser.id}) from '${forumUser.discordstatus}' to '${status}'`);
-		let db = connectToDB();
-		let query = `UPDATE ${config.mysql.prefix}userfield SET field24='${status}' WHERE userid=${forumUser.id}`;
-		db.query(query, function(err, rows, fields) {});
+		let query = `UPDATE ${config.mysql.prefix}userfield SET field24 = ? WHERE userid = ?`;
+		try {
+			await queryDB(query, [status, forumUser.id]);
+		} catch (error) {
+			console.error(error);
+			return false;
+		}
 	}
 	forumUser.discordstatus = status;
+	return true;
 }
 
 const activityInterval_s = 15 * 60; //15 minutes
-function setDiscordActivityForForumUser(forumUser, activityEpochMs) {
-	activityEpoch = '' + (Math.floor((activityEpochMs / 1000) / activityInterval_s) * activityInterval_s);
+async function setDiscordActivityForForumUser(forumUser, activityEpochMs) {
+	let activityEpoch = '' + (Math.floor((activityEpochMs / 1000) / activityInterval_s) * activityInterval_s);
 	if (forumUser.discordactivity === activityEpoch)
-		return;
+		return true;
 	//console.log(`Updating Discord Activity for ${forumUser.name} (${forumUser.id}) from '${forumUser.discordactivity}' to '${activityEpoch}'`);
 	if (config.devMode !== true) {
-		let db = connectToDB();
-		let query = `UPDATE ${config.mysql.prefix}userfield SET field23='${activityEpoch}' WHERE userid=${forumUser.id}`;
-		db.query(query, function(err, rows, fields) {});
+		let query = `UPDATE ${config.mysql.prefix}userfield SET field23 = ? WHERE userid = ?`;
+		try {
+			await queryDB(query, [activityEpoch, forumUser.id]);
+		} catch (error) {
+			console.error(error);
+			return false;
+		}
 	}
 	forumUser.discordactivity = activityEpoch;
+	return true;
 }
 
-function clearDiscordDataForForumUser(forumUser) {
+async function clearDiscordDataForForumUser(forumUser) {
 	if (config.devMode !== true) {
 		console.log(`Clearing Discord data for ${forumUser.name} (${forumUser.id})`);
-		let db = connectToDB();
-		let query = `UPDATE ${config.mysql.prefix}userfield SET field19='', field20='', field23='', field24='' WHERE userid=${forumUser.id}`;
-		db.query(query, function(err, rows, fields) {});
+		let query = `UPDATE ${config.mysql.prefix}userfield SET field19 = '', field20 = '', field23 = '', field24 = '' WHERE userid = ?`;
+		try {
+			await queryDB(query, [forumUser.id]);
+		} catch (error) {
+			console.error(error);
+			return false;
+		}
 	}
+	return true;
 }
 
 function matchGuildRoleName(guildRole) {
@@ -3284,7 +3257,7 @@ function doForumSync(message, member, guild, perm, doDaily) {
 								forumUser.indexIsId = true;
 								usersByIDOrDiscriminator[roleMember.user.id] = forumUser;
 								delete usersByIDOrDiscriminator[roleMember.user.tag];
-								setDiscordIDForForumUser(forumUser, roleMember);
+								await setDiscordIDForForumUser(forumUser, roleMember);
 							}
 						}
 
@@ -3321,15 +3294,15 @@ function doForumSync(message, member, guild, perm, doDaily) {
 										}
 									}
 								}
-								setDiscordTagForForumUser(forumUser, roleMember);
-								setDiscordStatusForForumUser(forumUser, 'connected');
+								await setDiscordTagForForumUser(forumUser, roleMember);
+								await setDiscordStatusForForumUser(forumUser, 'connected');
 							}
 
 							if (isMemberRole) {
 								if (roleMember.voice.channel)
-									setDiscordActivityForForumUser(forumUser, epochMs);
+									await setDiscordActivityForForumUser(forumUser, epochMs);
 								else if (localVoiceStatusUpdates[roleMember.id])
-									setDiscordActivityForForumUser(forumUser, localVoiceStatusUpdates[roleMember.id]);
+									await setDiscordActivityForForumUser(forumUser, localVoiceStatusUpdates[roleMember.id]);
 
 								//Members shouldn't also be guests... lest there be a strange permission thing when AOD members are removed
 								if (seenByID[roleMember.id] !== undefined) {
@@ -3373,7 +3346,7 @@ function doForumSync(message, member, guild, perm, doDaily) {
 									guildMember = guild.members.cache.find(matchGuildMemberTag, u);
 									if (guildMember) {
 										//don't update the list, we're done processing
-										setDiscordIDForForumUser(forumUser, guildMember);
+										await setDiscordIDForForumUser(forumUser, guildMember);
 									}
 								}
 								if (guildMember) {
@@ -3398,13 +3371,13 @@ function doForumSync(message, member, guild, perm, doDaily) {
 											console.error(`Failed to rename ${guildMember.user.tag} to ${forumUser.discordNickname}`);
 										}
 									}
-									setDiscordTagForForumUser(forumUser, guildMember);
+									await setDiscordTagForForumUser(forumUser, guildMember);
 									if (isMemberRole) {
-										setDiscordStatusForForumUser(forumUser, 'connected');
+										await setDiscordStatusForForumUser(forumUser, 'connected');
 										if (guildMember.voice.channel)
-											setDiscordActivityForForumUser(forumUser, epochMs);
+											await setDiscordActivityForForumUser(forumUser, epochMs);
 										else if (localVoiceStatusUpdates[guildMember.id])
-											setDiscordActivityForForumUser(forumUser, localVoiceStatusUpdates[guildMember.id]);
+											await setDiscordActivityForForumUser(forumUser, localVoiceStatusUpdates[guildMember.id]);
 									}
 								} else {
 									if (isMemberRole) {
@@ -3414,18 +3387,18 @@ function doForumSync(message, member, guild, perm, doDaily) {
 											disconnected[forumUser.division]++;
 											total_disconnected++;
 											leftServer.push(`${u} (${forumUser.name} -- ${forumUser.division})`);
-											setDiscordStatusForForumUser(forumUser, 'disconnected');
+											await setDiscordStatusForForumUser(forumUser, 'disconnected');
 										} else {
 											if (misses[forumUser.division] === undefined)
 												misses[forumUser.division] = 0;
 											misses[forumUser.division]++;
 											total_misses++;
 											noAccount.push(`${u} (${forumUser.name} -- ${forumUser.division})`);
-											setDiscordStatusForForumUser(forumUser, 'never_connected');
+											await setDiscordStatusForForumUser(forumUser, 'never_connected');
 										}
 									} else if (isGuestRole) {
 										//We don't need to constantly reprocess old AOD members who have left or forum guests who visited discord once
-										clearDiscordDataForForumUser(forumUser);
+										await clearDiscordDataForForumUser(forumUser);
 									}
 								}
 							}
@@ -4436,53 +4409,43 @@ function convertDiscordTag(discordTag) {
 }
 
 //get forum group for guild member
-function getForumGroupsForMember(member) {
-	let promise = new Promise(function(resolve, reject) {
-		let db = connectToDB();
-		let query =
-			`SELECT u.userid,u.username,u.usergroupid,u.membergroupids,f.field11,` +
-			`  (CASE WHEN (r.requester_id IS NOT NULL) THEN 1 ELSE 0 END) AS pending, t.name AS pending_name ` +
-			`FROM ${config.mysql.prefix}user AS u ` +
-			`INNER JOIN ${config.mysql.prefix}userfield AS f ON u.userid=f.userid ` +
-			`LEFT JOIN ${config.mysql.trackerPrefix}member_requests AS r ON u.userid=r.member_id AND r.approver_id IS NULL ` +
-			`  AND r.hold_placed_at IS NULL AND r.created_at > (NOW() - INTERVAL 24 HOUR) ` +
-			`LEFT JOIN ${config.mysql.trackerPrefix}members AS t on u.userid=t.clan_id ` +
-			`WHERE f.field20="${member.user.id}" OR f.field19 LIKE "${convertDiscordTag(member.user.tag)}"`;
-		db.query(query, function(err, rows, fields) {
-			if (err) {
-				console.log(err);
-				reject('Database error');
+async function getForumGroupsForMember(member) {
+	let query =
+		`SELECT u.userid,u.username,u.usergroupid,u.membergroupids,f.field11,` +
+		`  (CASE WHEN (r.requester_id IS NOT NULL) THEN 1 ELSE 0 END) AS pending, t.name AS pending_name ` +
+		`FROM ${config.mysql.prefix}user AS u ` +
+		`INNER JOIN ${config.mysql.prefix}userfield AS f ON u.userid=f.userid ` +
+		`LEFT JOIN ${config.mysql.trackerPrefix}member_requests AS r ON u.userid=r.member_id AND r.approver_id IS NULL ` +
+		`  AND r.hold_placed_at IS NULL AND r.created_at > (NOW() - INTERVAL 24 HOUR) ` +
+		`LEFT JOIN ${config.mysql.trackerPrefix}members AS t on u.userid=t.clan_id ` +
+		`WHERE f.field20 = ? OR f.field19 LIKE ?`;
+	let rows = await queryDB(query, [member.user.id, convertDiscordTag(member.user.tag)]);
+	if (rows === undefined || rows.length === 0) {
+		return;
+	}
+	if (rows.length > 1) {
+		member.send(`Hello ${member.displayName}! There is a conflict with your discord name. Please verify your profile and contact the leadership for help.`).catch(() => {});
+		throw new Error(`Member name conflict: ${rows.length} members have the discord tag ${member.user.tag}`);
+	}
+	let row = rows.shift();
+	let forumGroups = [];
+	if (row.usergroupid !== undefined) {
+		if (row.pending) {
+			let guestGroupId = forumIntegrationConfig[config.guestRole].forumGroups[0];
+			let memberGroupId = forumIntegrationConfig[config.memberRole].forumGroups[0];
+			//if member is pending, overwrite primary group id to member group id
+			if (row.usergroupid == guestGroupId) {
+				row.usergroupid = memberGroupId;
 			} else {
-				if (rows === undefined || rows.length === 0) {
-					return resolve();
-				}
-				if (rows.length > 1) { //danger will robinson! name conflict in database
-					member.send(`Hello ${member.displayName}! There is a conflict with your discord name. Please verify your profile and contact the leadership for help.`).catch(() => {});
-					return reject(`Member name conflict: ${rows.length} members have the discord tag ${member.user.tag}`);
-				}
-				let row = rows.shift();
-				let forumGroups = [];
-				if (row.usergroupid !== undefined) {
-					if (row.pending) {
-						let guestGroupId = forumIntegrationConfig[config.guestRole].forumGroups[0];
-						let memberGroupId = forumIntegrationConfig[config.memberRole].forumGroups[0];
-						//if member is pending, overwrite primary group id to member group id
-						if (row.usergroupid == guestGroupId) {
-							row.usergroupid = memberGroupId;
-						} else {
-							row.pending = false;
-						}
-					}
-					forumGroups.push('' + row.usergroupid);
-				}
-				if (row.membergroupids !== undefined && row.membergroupids !== '') {
-					forumGroups = forumGroups.concat(row.membergroupids.split(','));
-				}
-				return resolve({ name: getDiscordNickname(row.pending ? row.pending_name : row.username, row.field11), groups: forumGroups, pending: row.pending });
+				row.pending = false;
 			}
-		});
-	});
-	return promise;
+		}
+		forumGroups.push('' + row.usergroupid);
+	}
+	if (row.membergroupids !== undefined && row.membergroupids !== '') {
+		forumGroups = forumGroups.concat(row.membergroupids.split(','));
+	}
+	return { name: getDiscordNickname(row.pending ? row.pending_name : row.username, row.field11), groups: forumGroups, pending: row.pending };
 }
 
 function setRolesForMember(guild, member, reason) {
