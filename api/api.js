@@ -436,15 +436,12 @@ memberRouter.param('member_id', (req, res, next, member_id) => {
 	next();
 });
 
-memberRouter.get('/:member_id/avatar', async (req, res) => {
-	return res.send({ avatarHash: req.member.user.avatar });
-});
-
 memberRouter.get('/:member_id', async (req, res, next) => {
 	return res.send({
 		id: req.member.id,
 		bot: req.member.bot,
 		displayName: req.member.displayName,
+		avatarHash: req.member.user.avatar,
 		userName: req.member.user.username,
 		tag: req.member.user.tag
 	});
