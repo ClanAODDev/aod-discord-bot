@@ -3128,7 +3128,7 @@ async function setDiscordAvatarForForumUser(forumUser, avatar) {
 	if (forumUser.discordavatar === avatar)
 		return true;
 	if (config.devMode !== true) {
-		console.log(`Updating Discord Avator for ${forumUser.name} (${forumUser.id}) from '${forumUser.discordavatar}' to '${avatar}'`);
+		console.log(`Updating Discord Avatar for ${forumUser.name} (${forumUser.id}) from '${forumUser.discordavatar}' to '${avatar}'`);
 		let query = `UPDATE ${config.mysql.trackerPrefix}members SET discord_avatar = ? WHERE clan_id = ?`;
 		try {
 			await queryDB(query, [avatar, forumUser.id]);
