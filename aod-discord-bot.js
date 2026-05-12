@@ -2865,7 +2865,7 @@ async function getForumUsersForGroups(groups, allowPending) {
 		`  IF(f.field19 NOT LIKE "%#%" OR f.field19 LIKE "%#0", LOWER(f.field19), f.field19) AS field19,` +
 		`  f.field20,f.field11,f.field13,f.field23,f.field24,` +
 		`  (CASE WHEN (r.requester_id IS NOT NULL) THEN 1 ELSE 0 END) AS pending, ` +
-		`  t.name AS pending_name, t.discord_avatar AS discord_avatar ` +
+		`  (CASE WHEN (t.id IS NOT NULL) THEN 1 ELSE 0 END) AS trackermember, t.name AS pending_name, t.discord_avatar AS discord_avatar ` +
 		`FROM ${config.mysql.prefix}user AS u ` +
 		`INNER JOIN ${config.mysql.prefix}userfield AS f ON u.userid=f.userid ` +
 		`LEFT JOIN ${config.mysql.trackerPrefix}member_requests AS r ON u.userid=r.member_id AND r.approver_id IS NULL ` +
@@ -2914,6 +2914,7 @@ async function getForumUsersForGroups(groups, allowPending) {
 				discordactivity: row.field23,
 				discordavatar: row.discord_avatar,
 				pending: row.pending,
+				trackermember: row.trackermember,
 			};
 		}
 	});
@@ -3125,7 +3126,7 @@ async function clearDiscordDataForForumUser(forumUser) {
 }
 
 async function setDiscordAvatarForForumUser(forumUser, avatar) {
-	if (forumUser.discordavatar === avatar)
+	if (!forumUser.trackermember || forumUser.discordavatar === avatar)
 		return true;
 	if (config.devMode !== true) {
 		console.log(`Updating Discord Avatar for ${forumUser.name} (${forumUser.id}) from '${forumUser.discordavatar}' to '${avatar}'`);
