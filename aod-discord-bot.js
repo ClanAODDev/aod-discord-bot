@@ -2864,7 +2864,8 @@ async function getForumUsersForGroups(groups, allowPending) {
 		`SELECT u.userid,u.username,` +
 		`  IF(f.field19 NOT LIKE "%#%" OR f.field19 LIKE "%#0", LOWER(f.field19), f.field19) AS field19,` +
 		`  f.field20,f.field11,f.field13,f.field23,f.field24,` +
-		`  (CASE WHEN (r.requester_id IS NOT NULL) THEN 1 ELSE 0 END) AS pending, t.name AS pending_name ` +
+		`  (CASE WHEN (r.requester_id IS NOT NULL) THEN 1 ELSE 0 END) AS pending, ` +
+		`  t.name AS pending_name, t.discord_avatar AS discord_avatar ` +
 		`FROM ${config.mysql.prefix}user AS u ` +
 		`INNER JOIN ${config.mysql.prefix}userfield AS f ON u.userid=f.userid ` +
 		`LEFT JOIN ${config.mysql.trackerPrefix}member_requests AS r ON u.userid=r.member_id AND r.approver_id IS NULL ` +
@@ -2911,6 +2912,7 @@ async function getForumUsersForGroups(groups, allowPending) {
 				discordtag: discordtag,
 				discordstatus: row.field24,
 				discordactivity: row.field23,
+				discordavatar: row.discord_avatar,
 				pending: row.pending,
 			};
 		}
@@ -3122,6 +3124,23 @@ async function clearDiscordDataForForumUser(forumUser) {
 	return true;
 }
 
+async function setDiscordAvatarForForumUser(forumUser, avatar) {
+	if (forumUser.discordavatar === avatar)
+		return true;
+	if (config.devMode !== true) {
+		console.log(`Updating Discord Avator for ${forumUser.name} (${forumUser.id}) from '${forumUser.discordavatar}' to '${avatar}'`);
+		let query = `UPDATE ${config.mysql.trackerPrefix}members SET discord_avatar = ? WHERE clan_id = ?`;
+		try {
+			await queryDB(query, [avatar, forumUser.id]);
+		} catch (error) {
+			console.error(error);
+			return false;
+		}
+	}
+	forumUser.discordstatus = avatar;
+	return true;
+}
+
 function matchGuildRoleName(guildRole) {
 	return guildRole.name == this;
 }
@@ -3296,6 +3315,7 @@ function doForumSync(message, member, guild, perm, doDaily) {
 								}
 								await setDiscordTagForForumUser(forumUser, roleMember);
 								await setDiscordStatusForForumUser(forumUser, 'connected');
+								await setDiscordAvatarForForumUser(forumUser, roleMember.user.avatar);
 							}
 
 							if (isMemberRole) {
@@ -3374,6 +3394,7 @@ function doForumSync(message, member, guild, perm, doDaily) {
 									await setDiscordTagForForumUser(forumUser, guildMember);
 									if (isMemberRole) {
 										await setDiscordStatusForForumUser(forumUser, 'connected');
+										await setDiscordAvatarForForumUser(forumUser, guildMember.user.avatar);
 										if (guildMember.voice.channel)
 											await setDiscordActivityForForumUser(forumUser, epochMs);
 										else if (localVoiceStatusUpdates[guildMember.id])
