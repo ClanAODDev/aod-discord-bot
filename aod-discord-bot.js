@@ -4797,10 +4797,16 @@ client.on('clientReady', async function() {
 	}
 	fs.writeFileSync(config.joinToCreateChannels, JSON.stringify(joinToCreateChannels), 'utf8');
 
-	forumSyncTimerCallback(); //prime the date and do initial adds
+	if (forumSyncTimer) {
+		clearInterval(forumSyncTimer);
+	}
+	forumSyncTimerCallback();
 	forumSyncTimer = setInterval(forumSyncTimerCallback, config.forumSyncIntervalMS);
 
 	if (config.twitch?.clientId && config.twitch?.clientSecret && config.twitch?.channelName) {
+		if (twitchMonitorTimer) {
+			clearInterval(twitchMonitorTimer);
+		}
 		twitchMonitorCallback();
 		twitchMonitorTimer = setInterval(twitchMonitorCallback, config.twitch.checkIntervalMS || 60000);
 	}
