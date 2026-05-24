@@ -5,7 +5,6 @@ const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { execFile } = require('node:child_process');
 
 const fs = require('node:fs');
-const path = require('node:path');
 
 const cmdOptions = {
 	timeout: 30 * 1000 //30 seconds
@@ -108,8 +107,7 @@ module.exports = {
 					return global.messageReply(interaction, `Invalid project name`);
 				}
 
-				const isSelf = action === 'restart-service' &&
-					path.resolve(config.projects[name].path) === path.resolve(__dirname, '..');
+				const isSelf = action === 'restart-service' && !!config.projects[name].self;
 
 				if (isSelf) {
 					await global.messageReply(interaction, `Restarting service for \`${name}\`...`);
