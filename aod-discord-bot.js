@@ -2868,9 +2868,9 @@ async function getForumUsersForGroups(groups, allowPending) {
 		`  (CASE WHEN (t.id IS NOT NULL) THEN 1 ELSE 0 END) AS trackermember, t.name AS pending_name, t.discord_avatar AS discord_avatar ` +
 		`FROM ${config.mysql.prefix}user AS u ` +
 		`INNER JOIN ${config.mysql.prefix}userfield AS f ON u.userid=f.userid ` +
-		`LEFT JOIN ${config.mysql.trackerPrefix}member_requests AS r ON u.userid=r.member_id AND r.approver_id IS NULL ` +
+		`LEFT JOIN ${config.mysql.trackerPrefix}members AS t ON u.userid=t.clan_id ` +
+		`LEFT JOIN ${config.mysql.trackerPrefix}member_requests AS r ON t.id=r.member_id AND r.approver_id IS NULL ` +
 		`  AND r.hold_placed_at IS NULL AND r.created_at > (NOW() - INTERVAL 24 HOUR) ` +
-		`LEFT JOIN ${config.mysql.trackerPrefix}members AS t on u.userid=t.clan_id ` +
 		`WHERE ((u.usergroupid IN (${groupStr}) OR u.membergroupids REGEXP '(^|,)(${groupRegex})(,|$)') `;
 	if (allowPending === true) {
 		query +=
@@ -4437,9 +4437,9 @@ async function getForumGroupsForMember(member) {
 		`  (CASE WHEN (r.requester_id IS NOT NULL) THEN 1 ELSE 0 END) AS pending, t.name AS pending_name ` +
 		`FROM ${config.mysql.prefix}user AS u ` +
 		`INNER JOIN ${config.mysql.prefix}userfield AS f ON u.userid=f.userid ` +
-		`LEFT JOIN ${config.mysql.trackerPrefix}member_requests AS r ON u.userid=r.member_id AND r.approver_id IS NULL ` +
+		`LEFT JOIN ${config.mysql.trackerPrefix}members AS t ON u.userid=t.clan_id ` +
+		`LEFT JOIN ${config.mysql.trackerPrefix}member_requests AS r ON t.id=r.member_id AND r.approver_id IS NULL ` +
 		`  AND r.hold_placed_at IS NULL AND r.created_at > (NOW() - INTERVAL 24 HOUR) ` +
-		`LEFT JOIN ${config.mysql.trackerPrefix}members AS t on u.userid=t.clan_id ` +
 		`WHERE f.field20 = ? OR f.field19 LIKE ?`;
 	let rows = await queryDB(query, [member.user.id, convertDiscordTag(member.user.tag)]);
 	if (rows === undefined || rows.length === 0) {
