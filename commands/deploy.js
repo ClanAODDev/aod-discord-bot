@@ -5,6 +5,7 @@ const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { execFile } = require('node:child_process');
 
 const fs = require('node:fs');
+const path = require('node:path');
 
 const cmdOptions = {
 	timeout: 30 * 1000 //30 seconds
@@ -105,6 +106,19 @@ module.exports = {
 				let config = JSON.parse(fs.readFileSync(global.config.deployProjectConfig, 'utf8'));
 				if (!config.projects || !config.projects[name]) {
 					return global.messageReply(interaction, `Invalid project name`);
+				}
+
+				const isSelf = action === 'restart-service' &&
+					path.resolve(config.projects[name].path) === path.resolve(__dirname, '..');
+
+				if (isSelf) {
+					await global.messageReply(interaction, `Restarting service for \`${name}\`...`);
+					run('sudo', [
+						global.config.deployProjectScript,
+						name,
+						action,
+						'--config', global.config.deployProjectConfig]);
+					return Promise.resolve();
 				}
 
 				await interaction.deferReply();
