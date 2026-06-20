@@ -18,6 +18,7 @@ const typeChoices = [
 	{ name: 'PTT Only', value: 'ptt' },
 	{ name: 'JTC', value: 'jtc' },
 	{ name: 'Text', value: 'text' },
+	{ name: 'Forum', value: 'forum' },
 ];
 
 function getTypeDisplay(type) {
@@ -172,6 +173,8 @@ module.exports = {
 			case 'add': {
 				let name = interaction.options.getString('name').toLowerCase().replace(/\s/g, '-');
 				let type = interaction.options.getString('type') ?? 'voice';
+				if (type === 'forum' && perm < global.PERM_STAFF)
+					return global.ephemeralReply(interaction, "You do not have permissions to create forum channels");
 				let level = interaction.options.getString('perm') ?? 'member';
 				let category = interaction.options.getChannel('category');
 				let roleName = interaction.options.getString('role');
@@ -219,8 +222,8 @@ module.exports = {
 						}
 					}
 				} else {
-					if (type === 'text')
-						return global.ephemeralReply(interaction, "A category must be set for text channels");
+					if (type === 'text' || type === 'forum')
+						return global.ephemeralReply(interaction, `A category must be set for ${type} channels`);
 					if (type === 'jtc')
 						return global.ephemeralReply(interaction, "A category must be set for join-to-create channels");
 
