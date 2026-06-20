@@ -196,10 +196,11 @@ async function queryDB(query, params = []) {
 	return rows;
 }
 
-function streamQueryDB(query, params = [], onRow) {
+function streamQueryDB(query, params, onRow) {
 	return new Promise(function(resolve, reject) {
 		let queryStream = mysqlPool.query(query, params).stream({ objectMode: true });
 		let finished = false;
+
 		function rejectOnce(error) {
 			if (finished)
 				return;
@@ -1456,18 +1457,23 @@ async function addChannel(guild, message, member, perm, name, type, level, categ
 		channelType = ChannelType.GuildVoice;
 	} else if (type === 'jtc') {
 		channelType = ChannelType.GuildVoice;
+	} else if (type === 'forum') {
+		channelType = ChannelType.GuildForum;
 	}
 
 	//create channel
 	let promise = new Promise(function(resolve, reject) {
-		guild.channels.create({
-				type: channelType,
-				name: name,
-				parent: category,
-				permissionOverwrites: permissions,
-				bitrate: 96000,
-				reason: `Requested by ${getNameFromMessage(message)}`
-			})
+		let channelOptions = {
+			type: channelType,
+			name: name,
+			parent: category,
+			permissionOverwrites: permissions,
+			reason: `Requested by ${getNameFromMessage(message)}`
+		};
+		if (channelType === ChannelType.GuildVoice)
+			channelOptions.bitrate = 96000;
+
+		guild.channels.create(channelOptions)
 			.then(async (c) => {
 				if (channelType === ChannelType.GuildVoice) {
 					//make sure someone gets into the channel
