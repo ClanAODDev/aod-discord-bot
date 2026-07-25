@@ -10,7 +10,8 @@ const {
 	ModalBuilder,
 	TextInputBuilder,
 	TextInputStyle,
-	MessageFlags
+	MessageFlags,
+	parseEmoji
 } = require('discord.js');
 
 const typeChoices = [
@@ -73,6 +74,88 @@ function getRolePermString(roleInfo, everyone) {
 	return perms;
 }
 
+
+function getForumTagData(tag) {
+	let tagData = {
+		id: tag.id,
+		name: tag.name,
+		moderated: tag.moderated
+	};
+	if (tag.emoji)
+		tagData.emoji = tag.emoji;
+	return tagData;
+}
+
+function getForumTagEmoji(emoji) {
+	if (!emoji)
+		return null;
+	emoji = emoji.trim();
+	if (emoji.length === 0)
+		return null;
+
+	let parsedEmoji = parseEmoji(emoji);
+	if (!parsedEmoji || (!parsedEmoji.id && !parsedEmoji.name))
+		return false;
+	if (parsedEmoji.id) {
+		return {
+			id: parsedEmoji.id,
+			name: null
+		};
+	}
+	if (!/[\p{Extended_Pictographic}\p{Regional_Indicator}\u20E3]/u.test(parsedEmoji.name))
+		return false;
+	return {
+		id: null,
+		name: parsedEmoji.name
+	};
+}
+
+function getForumTagDisplay(tag) {
+	if (tag.emoji && tag.emoji.name)
+		return `${tag.emoji.name} ${tag.name}`;
+	return tag.name;
+}
+
+function getForumTagByName(channel, tagName) {
+	tagName = tagName.toLowerCase();
+	return channel.availableTags.find(tag => tag.name.toLowerCase() === tagName);
+}
+
+function getForumTagList(channel) {
+	if (channel.availableTags.length === 0)
+		return 'No tags configured.';
+	return channel.availableTags.map(tag => `- ${getForumTagDisplay(tag)}${tag.moderated ? ' (moderated)' : ''}`).join('\n');
+}
+
+async function getForumTagOptionChannel(interaction, guild) {
+	let channelOption = interaction.options.get('channel');
+	if (channelOption && channelOption.channel)
+		return channelOption.channel;
+	if (channelOption && channelOption.value)
+		return guild.channels.resolve(channelOption.value) ?? await guild.channels.fetch(channelOption.value).catch(() => null);
+	return interaction.channel;
+}
+
+function checkForumTagChannel(interaction, guild, member, perm, channel) {
+	if (!channel)
+		return global.ephemeralReply(interaction, "Please provide a forum channel or execute in a forum channel");
+	if (channel.type !== ChannelType.GuildForum)
+		return global.ephemeralReply(interaction, `${channel} is not a forum channel`);
+	if (global.config.protectedChannels.includes(channel.name))
+		return global.ephemeralReply(interaction, `${channel} is a protected channel`);
+
+	let category = channel.parent;
+	if (category) {
+		let officerRoleName = category.name + ' ' + global.config.discordOfficerSuffix;
+		let officerRole = guild.roles.cache.find(r => { return r.name == officerRoleName; });
+		if (perm == global.PERM_DIVISION_COMMANDER && (!officerRole || !member.roles.cache.get(officerRole.id)))
+			return global.ephemeralReply(interaction, 'You can only update forum tags for a division you command');
+	} else if (perm < global.PERM_STAFF) {
+		return global.ephemeralReply(interaction, 'You cannot update this channel');
+	}
+	return null;
+}
+
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('channel')
@@ -96,6 +179,17 @@ module.exports = {
 			.addChannelOption(option => option.setName('channel').setDescription('Channel to update').addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildForum))
 			.addStringOption(option => option.setName('role').setDescription('Channel Role for role locked channels').setAutocomplete(true))
 			.addStringOption(option => option.setName('type').setDescription('Voice Type (ignored for text)').setChoices(...voiceTypeChoices)))
+		.addSubcommandGroup(group => group.setName('tags').setDescription('Manage forum channel tags')
+			.addSubcommand(command => command.setName('list').setDescription('List forum channel tags')
+				.addChannelOption(option => option.setName('channel').setDescription('Forum channel').addChannelTypes(ChannelType.GuildForum)))
+			.addSubcommand(command => command.setName('add').setDescription('Add a forum channel tag')
+				.addChannelOption(option => option.setName('channel').setDescription('Forum channel').setRequired(true).addChannelTypes(ChannelType.GuildForum))
+				.addStringOption(option => option.setName('name').setDescription('Tag name').setRequired(true).setMaxLength(20))
+				.addBooleanOption(option => option.setName('moderated').setDescription('Require manage threads permission to use this tag'))
+				.addStringOption(option => option.setName('emoji').setDescription('Unicode emoji or custom emoji')))
+			.addSubcommand(command => command.setName('remove').setDescription('Remove a forum channel tag')
+				.addChannelOption(option => option.setName('channel').setDescription('Forum channel').setRequired(true).addChannelTypes(ChannelType.GuildForum))
+				.addStringOption(option => option.setName('tag').setDescription('Tag to remove').setRequired(true).setAutocomplete(true))))
 		.addSubcommand(command => command.setName('rename').setDescription('Rename a channel')
 			.addChannelOption(option => option.setName('channel').setDescription('Channel to rename').setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildForum))
 			.addStringOption(option => option.setName('name').setDescription('Channel Name').setRequired(true)))
@@ -107,6 +201,16 @@ module.exports = {
 			.addIntegerOption(option => option.setName('num').setDescription('Number of messages to purge').setRequired(true))),
 	help: true,
 	checkPerm(perm, commandName, parentName) {
+		if (parentName === 'tags') {
+			switch (commandName) {
+				case 'list':
+					return perm >= global.PERM_RECRUITER;
+				case 'add':
+				case 'remove':
+					return perm >= global.PERM_STAFF;
+			}
+			return false;
+		}
 		switch (commandName) {
 			case 'channel':
 			case 'topic':
@@ -127,8 +231,18 @@ module.exports = {
 	},
 	async autocomplete(interaction, guild, member, perm) {
 		const subCommand = interaction.options.getSubcommand();
+		const commandGroup = interaction.options.getSubcommandGroup(false);
 		const focusedOption = interaction.options.getFocused(true);
 		let search = focusedOption.value.toLowerCase();
+		if (commandGroup === 'tags') {
+			if (subCommand === 'remove' && focusedOption.name === 'tag') {
+				let channel = await getForumTagOptionChannel(interaction, guild);
+				if (!channel || channel.type !== ChannelType.GuildForum)
+					return interaction.respond([]);
+				return interaction.respond(global.sortAndLimitOptions(channel.availableTags.map(tag => tag.name), 25, search));
+			}
+			return Promise.reject();
+		}
 		switch (subCommand) {
 			case 'add':
 			case 'update': {
@@ -169,6 +283,71 @@ module.exports = {
 	},
 	async execute(interaction, guild, member, perm) {
 		const subCommand = interaction.options.getSubcommand();
+		const commandGroup = interaction.options.getSubcommandGroup(false);
+		if (commandGroup === 'tags') {
+			switch (subCommand) {
+				case 'list': {
+					let channel = interaction.options.getChannel('channel') ?? interaction.channel;
+					if (!channel || channel.type !== ChannelType.GuildForum)
+						return global.ephemeralReply(interaction, "Please provide a forum channel or execute in a forum channel");
+					return global.ephemeralReply(interaction, {
+						title: `Tags for #${channel.name}`,
+						description: getForumTagList(channel)
+					});
+				}
+				case 'add': {
+					let channel = interaction.options.getChannel('channel');
+					let failed = checkForumTagChannel(interaction, guild, member, perm, channel);
+					if (failed)
+						return failed;
+
+					let name = interaction.options.getString('name').trim();
+					if (name.length === 0)
+						return global.ephemeralReply(interaction, 'Tag name is required');
+					if (getForumTagByName(channel, name))
+						return global.ephemeralReply(interaction, `Tag ${name} already exists for ${channel}`);
+					if (channel.availableTags.length >= 20)
+						return global.ephemeralReply(interaction, `${channel} already has the maximum number of forum tags`);
+
+					let tagData = {
+						name: name,
+						moderated: interaction.options.getBoolean('moderated') ?? false
+					};
+					let emoji = getForumTagEmoji(interaction.options.getString('emoji'));
+					if (emoji === false)
+						return global.ephemeralReply(interaction, 'Invalid emoji.');
+					if (emoji)
+						tagData.emoji = emoji;
+
+					let tags = channel.availableTags.map(getForumTagData);
+					tags.push(tagData);
+
+					await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+					await channel.setAvailableTags(tags, `Requested by ${global.getNameFromMessage(interaction)}`);
+					return interaction.editReply({ content: `Added tag ${name} to ${channel}`, flags: MessageFlags.Ephemeral });
+				}
+				case 'remove': {
+					let channel = interaction.options.getChannel('channel');
+					let failed = checkForumTagChannel(interaction, guild, member, perm, channel);
+					if (failed)
+						return failed;
+
+					let tagName = interaction.options.getString('tag').trim();
+					let tag = getForumTagByName(channel, tagName);
+					if (!tag)
+						return global.ephemeralReply(interaction, `Tag ${tagName} does not exist for ${channel}`);
+
+					let tags = channel.availableTags
+						.filter(existingTag => existingTag.id !== tag.id)
+						.map(getForumTagData);
+
+					await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+					await channel.setAvailableTags(tags, `Requested by ${global.getNameFromMessage(interaction)}`);
+					return interaction.editReply({ content: `Removed tag ${tag.name} from ${channel}`, flags: MessageFlags.Ephemeral });
+				}
+			}
+			return Promise.reject();
+		}
 		switch (subCommand) {
 			case 'add': {
 				let name = interaction.options.getString('name').toLowerCase().replace(/\s/g, '-');
