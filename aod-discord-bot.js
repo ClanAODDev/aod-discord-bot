@@ -4474,16 +4474,9 @@ function setRolesForMember(guild, member, reason) {
 	let promise = new Promise(function(resolve, reject) {
 		getForumGroupsForMember(member)
 			.then(async function(data) {
-				let authCommand = client.application.commands.cache.find(c => c.name === 'authlink');
 				let helpCommand = client.application.commands.cache.find(c => c.name === 'help');
 
 				if (data === undefined || data.groups.length === 0) {
-					const helpRow = global.getHelpButtons(guild);
-					await sendMessageToMember(member, {
-						content: `Hello ${member.displayName}! Welcome to the ClanAOD.net Discord. Roles in our server are based on forum permissions. ` +
-							`Use </authlink:${authCommand.id}> to associate your Discord user to our [Forums](https://www.clanaod.net/forums/).`,
-						components: [helpRow]
-					});
 					return resolve([]);
 				}
 
@@ -4514,12 +4507,6 @@ function setRolesForMember(guild, member, reason) {
 					let added = rolesToAdd.map(r => r.name).join(',');
 					console.log(`Updated ${member.user.tag} (added: ${added}), ${reason}`);
 				} else if (!existingRoles.length) {
-					const helpRow = global.getHelpButtons(guild);
-					await sendMessageToMember(member, {
-						content: `Hello ${member.displayName}! Welcome to the ClanAOD.net Discord. Roles in our server are based on forum permissions. ` +
-							`Use </authlink:${authCommand.id}> to associate your Discord user to our [Forums](https://www.clanaod.net/forums/).`,
-						components: [helpRow]
-					});
 					return resolve([]);
 				}
 
