@@ -2927,10 +2927,10 @@ async function getForumUsersForGroups(groups, allowPending) {
 	return usersByIDOrDiscriminator;
 }
 
-async function getForumInfoForMember(member) {
+async function getForumInfoForMember(member, includePrivate) {
 	let userData = [];
 	let query =
-		`SELECT u.userid,u.username,f.field13,f.field11,f.field14,f.field19,f.field20,g.title ` +
+		`SELECT u.userid,u.username,${includePrivate === true ? 'u.email,' : ''}f.field13,f.field11,f.field14,f.field19,f.field20,g.title ` +
 		`FROM ${config.mysql.prefix}user AS u ` +
 		`INNER JOIN ${config.mysql.prefix}userfield AS f ON u.userid=f.userid ` +
 		`INNER JOIN ${config.mysql.prefix}usergroup AS g ON u.usergroupid=g.usergroupid `;
@@ -2953,6 +2953,7 @@ async function getForumInfoForMember(member) {
 			rank: row.field11,
 			loaStatus: row.field14,
 			forumGroup: row.title,
+			email: includePrivate === true ? row.email : undefined,
 			discordtag: row.field19,
 			discordid: row.field20
 		});
