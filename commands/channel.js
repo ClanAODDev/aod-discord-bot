@@ -18,6 +18,7 @@ const typeChoices = [
 	{ name: 'VAD', value: 'voice' },
 	{ name: 'PTT Only', value: 'ptt' },
 	{ name: 'JTC', value: 'jtc' },
+	{ name: 'Stage', value: 'stage' },
 	{ name: 'Text', value: 'text' },
 	{ name: 'Forum', value: 'forum' },
 ];
@@ -30,6 +31,13 @@ function getTypeDisplay(type) {
 	}
 	return 'Category';
 }
+
+const managedChannelTypes = [
+	ChannelType.GuildText,
+	ChannelType.GuildVoice,
+	ChannelType.GuildStageVoice,
+	ChannelType.GuildForum
+];
 
 const permChoices = [
 	{ name: 'Feed', value: 'feed' },
@@ -167,16 +175,16 @@ module.exports = {
 			.addChannelOption(option => option.setName('category').setDescription('Category for the channel').addChannelTypes(ChannelType.GuildCategory))
 			.addStringOption(option => option.setName('role').setDescription('Channel Role for role locked channels').setAutocomplete(true)))
 		.addSubcommand(command => command.setName('delete').setDescription('Delete an existing channel')
-			.addChannelOption(option => option.setName('channel').setDescription('Channel to delete').setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildForum)))
+			.addChannelOption(option => option.setName('channel').setDescription('Channel to delete').setRequired(true).addChannelTypes(...managedChannelTypes)))
 		.addSubcommand(command => command.setName('topic').setDescription('Set the topic for a channel')
 			.addStringOption(option => option.setName('topic').setDescription('Channel Topic (leave empty to clear topic)'))
-			.addChannelOption(option => option.setName('channel').setDescription('Channel to update').addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildForum)))
+			.addChannelOption(option => option.setName('channel').setDescription('Channel to update').addChannelTypes(...managedChannelTypes)))
 		.addSubcommand(command => command.setName('announce').setDescription('Send an announcement')
 			.addStringOption(option => option.setName('role').setDescription('Role to mention').setRequired(true).setAutocomplete(true))
 			.addStringOption(option => option.setName('message').setDescription('Message').setRequired(true)))
 		.addSubcommand(command => command.setName('update').setDescription('Update the permissions for a channel')
 			.addStringOption(option => option.setName('perm').setDescription('Channel Permissions (default=Member)').setRequired(true).setChoices(...permChoices))
-			.addChannelOption(option => option.setName('channel').setDescription('Channel to update').addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildForum))
+			.addChannelOption(option => option.setName('channel').setDescription('Channel to update').addChannelTypes(...managedChannelTypes))
 			.addStringOption(option => option.setName('role').setDescription('Channel Role for role locked channels').setAutocomplete(true))
 			.addStringOption(option => option.setName('type').setDescription('Voice Type (ignored for text)').setChoices(...voiceTypeChoices)))
 		.addSubcommandGroup(group => group.setName('tags').setDescription('Manage forum channel tags')
@@ -191,7 +199,7 @@ module.exports = {
 				.addChannelOption(option => option.setName('channel').setDescription('Forum channel').setRequired(true).addChannelTypes(ChannelType.GuildForum))
 				.addStringOption(option => option.setName('tag').setDescription('Tag to remove').setRequired(true).setAutocomplete(true))))
 		.addSubcommand(command => command.setName('rename').setDescription('Rename a channel')
-			.addChannelOption(option => option.setName('channel').setDescription('Channel to rename').setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildForum))
+			.addChannelOption(option => option.setName('channel').setDescription('Channel to rename').setRequired(true).addChannelTypes(...managedChannelTypes))
 			.addStringOption(option => option.setName('name').setDescription('Channel Name').setRequired(true)))
 		.addSubcommand(command => command.setName('move').setDescription('Move a channel')
 			.addChannelOption(option => option.setName('channel').setDescription('Channel to move').setRequired(true)))
@@ -401,7 +409,7 @@ module.exports = {
 						}
 					}
 				} else {
-					if (type === 'text' || type === 'forum')
+					if (type === 'text' || type === 'forum' || type === 'stage')
 						return global.ephemeralReply(interaction, `A category must be set for ${type} channels`);
 					if (type === 'jtc')
 						return global.ephemeralReply(interaction, "A category must be set for join-to-create channels");
@@ -514,9 +522,7 @@ module.exports = {
 				}
 
 				await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-				if (channel.type === ChannelType.GuildText) {
-					return channel.setTopic(topic, `Requested by ${global.getNameFromMessage(interaction)}`);
-				} else if (channel.type === ChannelType.GuildVoice) {
+				if (channel.type === ChannelType.GuildVoice) {
 					//return interaction.editReply({ content: "Not supported.", flags: MessageFlags.Ephemeral });
 					return interaction.client.rest.put(`/channels/${channel.id}/voice-status`, {
 						body: {
@@ -524,6 +530,8 @@ module.exports = {
 							reason: `Requested by ${global.getNameFromMessage(interaction)}`
 						}
 					});
+				} else {
+					return channel.setTopic(topic, `Requested by ${global.getNameFromMessage(interaction)}`);
 				}
 				break;
 			}

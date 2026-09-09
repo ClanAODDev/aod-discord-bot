@@ -490,8 +490,8 @@ function addRoleToPermissions(guild, role, permissions, allow, deny) {
 	permissions.push({
 		type: 'role',
 		id: role.id,
-		allow: (Array.isArray(allow) ? allow : [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect]),
-		deny: (Array.isArray(deny) ? deny : []),
+		allow: (Array.isArray(allow) ? allow.slice() : [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect]),
+		deny: (Array.isArray(deny) ? deny.slice() : []),
 	});
 
 	return permissions;
@@ -504,21 +504,20 @@ function addMemberToPermissions(guild, member, permissions, allow, deny) {
 	permissions.push({
 		type: 'member',
 		id: member.id,
-		allow: (Array.isArray(allow) ? allow : [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect]),
-		deny: (Array.isArray(deny) ? deny : []),
+		allow: (Array.isArray(allow) ? allow.slice() : [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect]),
+		deny: (Array.isArray(deny) ? deny.slice() : []),
 	});
 
 	return permissions;
 }
 
-//build a list of permissions for admin
-function getPermissionsForAdmin(guild, defaultAllow, defaultDeny, allow, deny) {
+function getGlobalPermissions(guild, defaultAllow, defaultDeny, allow, deny) {
 	let permissions = [{
 		id: guild.id,
 		allow: (Array.isArray(defaultAllow) ? defaultAllow : []),
 		deny: (Array.isArray(defaultDeny) ? defaultDeny : [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect])
 	}];
-
+	//global mute role
 	const muteRole = guild.roles.cache.find(r => { return r.name == config.muteRole; });
 	permissions = addRoleToPermissions(guild, muteRole, permissions, [], [
 		PermissionsBitField.Flags.SendMessages,
@@ -531,19 +530,25 @@ function getPermissionsForAdmin(guild, defaultAllow, defaultDeny, allow, deny) {
 		PermissionsBitField.Flags.AddReactions,
 		PermissionsBitField.Flags.UseExternalEmojis,
 		PermissionsBitField.Flags.UseVAD]);
+	//global ptt role
 	const pttRole = guild.roles.cache.find(r => { return r.name == config.pttRole; });
 	permissions = addRoleToPermissions(guild, pttRole, permissions, [], [PermissionsBitField.Flags.UseVAD]);
+	//global bot role
+	const restrictedBotRole = guild.roles.cache.find(r => { return r.name == "Restricted Bot"; });
+	permissions = addRoleToPermissions(guild, restrictedBotRole, permissions, [], [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect]);
 
+	return permissions;
+}
+
+//build a list of permissions for admin
+function getPermissionsForAdmin(guild, defaultAllow, defaultDeny, allow, deny) {
+	let permissions = getGlobalPermissions(guild, defaultAllow, defaultDeny, allow, deny);
 	// add admin
 	config.adminRoles.forEach(n => {
 		const role = guild.roles.cache.find(r => { return r.name == n; });
 		if (role)
-			permissions = addRoleToPermissions(guild, role, permissions, allow, deny);
+			permissions = addRoleToPermissions(guild, role, permissions, allow.concat(stageModeratorFlags), deny);
 	});
-
-	const restrictedBotRole = guild.roles.cache.find(r => { return r.name == "Restricted Bot"; });
-	permissions = addRoleToPermissions(guild, restrictedBotRole, permissions, [], [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect]);
-
 	return permissions;
 }
 //build a list of permissions for staff+
@@ -552,7 +557,7 @@ function getPermissionsForStaff(guild, defaultAllow, defaultDeny, allow, deny) {
 	// add staff
 	config.staffRoles.forEach(n => {
 		const role = guild.roles.cache.find(r => { return r.name == n; });
-		permissions = addRoleToPermissions(guild, role, permissions, allow, deny);
+		permissions = addRoleToPermissions(guild, role, permissions, allow.concat(stageModeratorFlags), deny);
 	});
 	return permissions;
 }
@@ -1092,6 +1097,11 @@ function commandPurge(message, member, cmd, args, guild, perm, isDM) {
 
 var channelPermissionLevels = ['public', 'feed', 'guest', 'member', 'role', 'officer', 'mod', 'staff', 'admin'];
 var FlagSetVoiceChannelStatus = 1n << 48n; //FIXME Replace with officiel flag
+var stageModeratorFlags = [
+	PermissionsBitField.Flags.ManageChannels,
+	PermissionsBitField.Flags.MuteMembers,
+	PermissionsBitField.Flags.MoveMembers
+];
 
 async function getChannelPermissions(guild, message, perm, level, type, divisionOfficerRole, additionalRole, targetMember) {
 	let promise = new Promise(async function(resolve, reject) {
@@ -1106,18 +1116,21 @@ async function getChannelPermissions(guild, message, perm, level, type, division
 			PermissionsBitField.Flags.ViewChannel,
 			PermissionsBitField.Flags.Connect
 		];
+		if (type === 'stage')
+			defaultDeny.push(PermissionsBitField.Flags.MentionEveryone);
 		let deny = [];
 		if (type === 'ptt')
 			defaultDeny.push(PermissionsBitField.Flags.UseVAD);
 		let officerAllow = allow.concat([
 			PermissionsBitField.Flags.ManageMessages,
-			PermissionsBitField.Flags.MoveMembers,
 			PermissionsBitField.Flags.ManageEvents,
 			PermissionsBitField.Flags.CreateEvents,
 			PermissionsBitField.Flags.BypassSlowmode,
 			PermissionsBitField.Flags.PinMessages,
 			FlagSetVoiceChannelStatus
 		]);
+		if (type === 'stage')
+			officerAllow.push(...stageModeratorFlags);
 		let memberAllow = allow.concat([
 			FlagSetVoiceChannelStatus
 		]);
@@ -1127,6 +1140,8 @@ async function getChannelPermissions(guild, message, perm, level, type, division
 			case 'public': {
 				if (type === 'ptt')
 					defaultDeny = [PermissionsBitField.Flags.UseVAD];
+				else if (type === 'stage')
+					defaultDeny = [PermissionsBitField.Flags.MentionEveryone];
 				else
 					defaultDeny = [];
 				if (perm < PERM_MOD) {
@@ -1178,7 +1193,7 @@ async function getChannelPermissions(guild, message, perm, level, type, division
 					return resolve(null);
 				}
 				permissions = getPermissionsForModerators(guild, defaultAllow, defaultDeny, allow, deny);
-				permissions = addRoleToPermissions(guild, divisionOfficerRole, permissions, [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.Connect]);
+				permissions = addRoleToPermissions(guild, divisionOfficerRole, permissions, allow.concat(stageModeratorFlags), deny);
 				break;
 			}
 			case 'staff': {
@@ -1352,6 +1367,10 @@ function getChannelInfo(guild, channel) {
 		let type = 'text';
 		if (channel.type === ChannelType.GuildCategory) {
 			type = 'category';
+		} else if (channel.type === ChannelType.GuildForum) {
+			type = 'forum';
+		} else if (channel.type === ChannelType.GuildStageVoice) {
+			type = 'stage';
 		} else if (channel.isVoiceBased()) {
 			if (divisionMemberPerms && !memberPerms.has(PermissionsBitField.Flags.UseVAD)) {
 				type = 'ptt';
@@ -1459,6 +1478,8 @@ async function addChannel(guild, message, member, perm, name, type, level, categ
 		channelType = ChannelType.GuildVoice;
 	} else if (type === 'forum') {
 		channelType = ChannelType.GuildForum;
+	} else if (type === 'stage') {
+		channelType = ChannelType.GuildStageVoice;
 	}
 
 	//create channel
@@ -1509,7 +1530,11 @@ global.addChannel = addChannel;
 
 async function setChannelPerms(guild, message, member, perm, channel, type, level, category, officerRole, role, targetMember) {
 	//get channel permissions
-	if (channel.isVoiceBased()) {
+	if (channel.type === ChannelType.GuildStageVoice) {
+		type = 'stage';
+	} else if (channel.type === ChannelType.GuildForum) {
+		type = 'forum';
+	} else if (channel.isVoiceBased()) {
 		if (type !== 'voice' && type !== 'ptt') {
 			const memberRole = guild.roles.cache.find(r => { return r.name == config.memberRole; });
 			const memberPerms = await channel.permissionsFor(memberRole);
