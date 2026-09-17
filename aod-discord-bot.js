@@ -4922,9 +4922,46 @@ client.on("guildCreate", guild => {
 	console.log(`New guild joined: ${guild.name} (id: ${guild.id}). This guild has ${guild.memberCount} members!`);
 });
 
-//guildCreate handler -- triggers when the bot leaves a server
+//guildDelete handler -- triggers when the bot leaves a server
 client.on("guildDelete", guild => {
 	console.log(`I have been removed from: ${guild.name} (id: ${guild.id})`);
+});
+
+//guildUnavailable handler
+client.on('guildUnavailable', guild => {
+    console.log(`Guild unavailable: ${guild.name} (id: ${guild.id})`);
+});
+
+//guildAvailable handler
+client.on('guildAvailable', guild => {
+    console.log(`Guild available: ${guild.name} (id: ${guild.id})`);
+});
+
+//shardReconnecting handler
+client.on('shardReconnecting', (id) => {
+    console.log(`Shard ${id} connection reconnecting`);
+});
+
+//shardResume handler
+client.on('shardResume', (id, replayedEvents) => {
+    console.log(`Shard ${id} connection resumed; ${replayedEvents} events replayed`);
+});
+
+//shardReady handler
+client.on('shardReady', (id) => {
+    console.log(`Shard ${id} connection established`);
+});
+
+//shardError handler
+client.on('shardError', (error, id) => {
+    console.error(`Shard ${id} websocket error:`, error);
+});
+
+//shardDisconnect handler
+client.on('shardDisconnect', (event, id) => {
+    console.error(
+        `Shard ${id} connection permanently disconnected: ${event.code} ${event.reason}`
+    );
 });
 
 //common client error handler
