@@ -2111,6 +2111,8 @@ async function deleteDivision(message, member, perm, guild, divisionName) {
 		}
 	}
 
+	// Clean up dependencies
+	await pruneDependentRoles(guild);
 	await updateOnboarding(guild, message);
 }
 global.deleteDivision = deleteDivision;
@@ -2617,45 +2619,44 @@ function setDependentRole(guild, message, dependentRole, requiredRole, skipVerif
 }
 global.setDependentRole = setDependentRole;
 
-function unsetDependentRole(guild, message, dependentRole, requiredRole) {
-	let promise = new Promise(async function(resolve, reject) {
-		let dependentRoleId = '' + dependentRole.id;
-		let requiredRoleId = '' + requiredRole.id;
-		let requiredRoleRemoved = false;
+async function unsetDependentRole(guild, message, dependentRole, requiredRole) {
+	if (!dependentRole || !requiredRole) {
+		return;
+	}
 
-		if (dependentRoles.requires[dependentRoleId] !== undefined) {
-			let index = dependentRoles.requires[dependentRoleId].indexOf(requiredRoleId);
-			if (index >= 0) {
-				dependentRoles.requires[dependentRoleId].splice(index, 1);
-				requiredRoleRemoved = true;
-			}
-			if (dependentRoles.requires[dependentRoleId].length == 0) {
-				delete dependentRoles.requires[dependentRoleId];
-			}
+	let dependentRoleId = '' + dependentRole.id;
+	let requiredRoleId = '' + requiredRole.id;
+	let requiredRoleRemoved = false;
+
+	if (dependentRoles.requires[dependentRoleId] !== undefined) {
+		let index = dependentRoles.requires[dependentRoleId].indexOf(requiredRoleId);
+		if (index >= 0) {
+			dependentRoles.requires[dependentRoleId].splice(index, 1);
+			requiredRoleRemoved = true;
 		}
-
-		if (dependentRoles.requiredFor[requiredRoleId] !== undefined) {
-			let index = dependentRoles.requiredFor[requiredRoleId].includes(dependentRoleId);
-			if (index >= 0) {
-				dependentRoles.requiredFor[requiredRoleId].splice(index, 1);
-			}
-			if (dependentRoles.requiredFor[requiredRoleId].length == 0) {
-				delete dependentRoles.requiredFor[requiredRoleId];
-			}
+		if (dependentRoles.requires[dependentRoleId].length == 0) {
+			delete dependentRoles.requires[dependentRoleId];
 		}
+	}
 
-		fs.writeFileSync(config.dependentRoles, JSON.stringify(dependentRoles), 'utf8');
-
-		if (message) {
-			if (requiredRoleRemoved)
-				await ephemeralReply(message, `${requiredRole} removed as required for ${dependentRole}`);
-			else
-				await ephemeralReply(message, `${requiredRole} not required for ${dependentRole}`);
+	if (dependentRoles.requiredFor[requiredRoleId] !== undefined) {
+		let index = dependentRoles.requiredFor[requiredRoleId].indexOf(dependentRoleId);
+		if (index >= 0) {
+			dependentRoles.requiredFor[requiredRoleId].splice(index, 1);
 		}
+		if (dependentRoles.requiredFor[requiredRoleId].length == 0) {
+			delete dependentRoles.requiredFor[requiredRoleId];
+		}
+	}
 
-		resolve();
-	});
-	return promise;
+	fs.writeFileSync(config.dependentRoles, JSON.stringify(dependentRoles), 'utf8');
+
+	if (message) {
+		if (requiredRoleRemoved)
+			await ephemeralReply(message, `${requiredRole} removed as required for ${dependentRole}`);
+		else
+			await ephemeralReply(message, `${requiredRole} not required for ${dependentRole}`);
+	}
 }
 global.unsetDependentRole = unsetDependentRole;
 

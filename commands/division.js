@@ -174,7 +174,7 @@ module.exports = {
 					for (const leader of divisionData.leadership) {
 						embed.fields.push({
 							name: leader.position,
-							value: `<@${leader.discord_id}>`
+							value: leader.discord_id ? `<@${leader.discord_id}>` : leader.name
 						});
 					}
 				}
