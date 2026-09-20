@@ -371,7 +371,7 @@ module.exports = {
 				if (category) {
 					let prefix;
 					let divisions = await global.getDivisionsFromTracker();
-					let divisionData = divisions[category.name];
+					let divisionData = global.getDivisionForCategory(divisions, category);
 					if (typeof(divisionData) !== 'undefined') {
 						prefix = divisionData.abbreviation;
 					} else {
@@ -585,7 +585,7 @@ module.exports = {
 				let officerRole;
 				if (category) {
 					let divisions = await global.getDivisionsFromTracker();
-					let divisionData = divisions[category.name];
+					let divisionData = global.getDivisionForCategory(divisions, category);
 
 					//check if this category has an associated officer role
 					let officerRoleName = category.name + ' ' + global.config.discordOfficerSuffix;
@@ -648,7 +648,7 @@ module.exports = {
 
 					let prefix;
 					let divisions = await global.getDivisionsFromTracker();
-					let divisionData = divisions[category.name];
+					let divisionData = global.getDivisionForCategory(divisions, category);
 					if (typeof(divisionData) !== 'undefined') {
 						prefix = divisionData.abbreviation;
 					} else {

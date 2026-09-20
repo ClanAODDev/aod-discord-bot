@@ -32,6 +32,9 @@ module.exports = {
 		.addSubcommand(command => command.setName('member-channel').setDescription('Update division Member channel')
 			.addStringOption(option => option.setName('name').setDescription('Division Name').setAutocomplete(true).setRequired(true))
 			.addChannelOption(option => option.setName('channel').setDescription('Channel Name')))
+		.addSubcommand(command => command.setName('division-channel').setDescription('Update division category channel')
+			.addStringOption(option => option.setName('name').setDescription('Division Name').setAutocomplete(true).setRequired(true))
+			.addChannelOption(option => option.setName('channel').setDescription('Division Category').addChannelTypes(ChannelType.GuildCategory)))
 		.addSubcommand(command => command.setName('convert').setDescription('Convert Division Permissions')
 			.addStringOption(option => option.setName('name').setDescription('Division Name').setAutocomplete(true).setRequired(true))
 			.addBooleanOption(option => option.setName('test').setDescription('Test only').setRequired(true)))
@@ -57,27 +60,33 @@ module.exports = {
 			case 'prefix':
 			case 'member-channel':
 			case 'officer-channel':
+			case 'division-channel':
 			case 'convert': {
 				if (focusedOption.name === 'name') {
 					let divisions = await global.getDivisionsFromTracker();
 					let options = [];
-					for (const divisionName in divisions) {
-						if (divisions.hasOwnProperty(divisionName)) {
-							if (subCommand === 'info' || subCommand === 'convert') {
-								options.push(divisionName);
-							} else if (guild.channels.cache.find(c => c.name === divisionName && c.type === ChannelType.GuildCategory)) {
+					for (const divisionIdentifier in divisions) {
+						if (divisions.hasOwnProperty(divisionIdentifier)) {
+							const division = divisions[divisionIdentifier];
+							const category = global.getDivisionCategory(guild, division);
+							if (subCommand === 'info' || subCommand === 'convert' || subCommand === 'division-channel') {
+								options.push({ name: division.name, value: divisionIdentifier });
+							} else if (category) {
 								if (subCommand === 'delete' || subCommand === 'prefix' ||
 									subCommand === 'officer-channel' || subCommand === 'member-channel') {
-									options.push(divisionName);
+									options.push({ name: division.name, value: divisionIdentifier });
 								}
 							} else {
 								if (subCommand === 'add') {
-									options.push(divisionName);
+									options.push({ name: division.name, value: divisionIdentifier });
 								}
 							}
 						}
 					}
-					return interaction.respond(global.sortAndLimitOptions(options, 25, search));
+					return interaction.respond(options
+						.filter(option => option.name.toLowerCase().includes(search))
+						.sort((a, b) => a.name.localeCompare(b.name))
+						.slice(0, 25));
 				}
 				break;
 			}
@@ -89,11 +98,16 @@ module.exports = {
 		await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 		switch (subCommand) {
 			case 'add': {
-				let name = interaction.options.getString('name');
-				return global.addDivision(interaction, member, perm, guild, name);
+				let divisionIdentifier = interaction.options.getString('name');
+				return global.addDivision(interaction, member, perm, guild, divisionIdentifier);
 			}
 			case 'delete': {
-				let name = interaction.options.getString('name');
+				let divisionIdentifier = interaction.options.getString('name');
+				let divisions = await global.getDivisionsFromTracker();
+				let divisionData = divisions[divisionIdentifier];
+				if (!divisionData)
+					return global.ephemeralReply(interaction, `Division ${divisionIdentifier} is not defined on the tracker`);
+				let name = divisionData.name;
 
 				const confirm = new ButtonBuilder()
 					.setCustomId('confirm_division_delete')
@@ -119,7 +133,7 @@ module.exports = {
 							content: `Deleting ${name} division...`,
 							components: []
 						}).catch(() => {});
-						await global.deleteDivision(interaction, member, perm, guild, name);
+						await global.deleteDivision(interaction, member, perm, guild, divisionIdentifier);
 						await interaction.followUp({
 							content: `${name} division deleted`,
 							components: [],
@@ -143,12 +157,13 @@ module.exports = {
 				return Promise.resolve();
 			}
 			case 'info': {
-				let name = interaction.options.getString('name');
+				let divisionIdentifier = interaction.options.getString('name');
 				let divisions = await global.getDivisionsFromTracker();
-				let divisionData = divisions[name];
+				let divisionData = divisions[divisionIdentifier];
 				if (typeof(divisionData) === 'undefined') {
-					return global.ephemeralReply(interaction, `${name} division is not defined on the tracker`);
+					return global.ephemeralReply(interaction, `Division ${divisionIdentifier} is not defined on the tracker`);
 				}
+				let name = divisionData.name;
 
 				let embed = {
 					description: `**${name} Division Information**`,
@@ -156,7 +171,7 @@ module.exports = {
 					fields: []
 				};
 
-				let category = guild.channels.cache.find(c => c.name === name && c.type === ChannelType.GuildCategory);
+				let category = global.getDivisionCategory(guild, divisionData);
 				embed.fields.push({
 					name: "Category",
 					value: category ? `${category}` : 'Not Found'
@@ -195,35 +210,25 @@ module.exports = {
 				return global.ephemeralReply(interaction, embed);
 			}
 			case 'prefix': {
-				let name = interaction.options.getString('name');
+				let divisionIdentifier = interaction.options.getString('name');
 				let old_prefix = interaction.options.getString('old-prefix');
 				let new_prefix = interaction.options.getString('new-prefix');
 
-				if (global.config.protectedCategories.includes(name)) {
-					return global.ephemeralReply(interaction, `${name} is a protected category`);
-				}
-
 				let divisions = await global.getDivisionsFromTracker();
-				let divisionData = divisions[name];
-				if (typeof(divisionData) !== 'undefined') {
-					if (new_prefix && new_prefix !== divisionData.abbreviation)
-						return global.ephemeralReply(interaction, 'new_prefix must be the configured abbreviation for the division');
-					new_prefix = divisionData.abbreviation;
-					if (!old_prefix) {
-						let lcName = name.toLowerCase();
-						old_prefix = lcName.replace(/\s/g, '-');
-					}
-				} else {
-					if (!new_prefix)
-						return global.ephemeralReply(interaction, 'new_prefix must be set if the division is configured on the tracker');
-					if (!old_prefix)
-						return global.ephemeralReply(interaction, 'old_prefix must be set if the division is configured on the tracker');
-				}
-
-				let category = guild.channels.cache.find(c => c.name === name && c.type === ChannelType.GuildCategory);
+				let divisionData = divisions[divisionIdentifier];
+				if (!divisionData)
+					return global.ephemeralReply(interaction, `Division ${divisionIdentifier} is not defined on the tracker`);
+				let category = global.getDivisionCategory(guild, divisionData);
 				if (!category) {
-					return global.ephemeralReply(interaction, `No category for ${name} found`);
+					return global.ephemeralReply(interaction, `No category for ${divisionData.name} found`);
 				}
+				if (global.config.protectedCategories.includes(category.name))
+					return global.ephemeralReply(interaction, `${category.name} is a protected category`);
+				if (new_prefix && new_prefix !== divisionData.abbreviation)
+					return global.ephemeralReply(interaction, 'new_prefix must be the configured abbreviation for the division');
+				new_prefix = divisionData.abbreviation;
+				if (!old_prefix)
+					old_prefix = category.name.toLowerCase().replace(/\s/g, '-');
 
 				let reply = '';
 				for (let c of category.children.cache.values()) {
@@ -238,51 +243,68 @@ module.exports = {
 				return global.ephemeralReply(interaction, reply);
 			}
 			case 'officer-channel': {
-				let name = interaction.options.getString('name');
+				let divisionIdentifier = interaction.options.getString('name');
 				let channel = interaction.options.getChannel('channel') ?? interaction.channel;
 
 				let divisions = await global.getDivisionsFromTracker();
-				let divisionData = divisions[name];
+				let divisionData = divisions[divisionIdentifier];
 				if (typeof(divisionData) === 'undefined') {
-					return global.ephemeralReply(interaction, `${name} division is not defined on the tracker`);
+					return global.ephemeralReply(interaction, `Division ${divisionIdentifier} is not defined on the tracker`);
 				}
-				if (!channel.parent || channel.parent.name !== name) {
+				let category = global.getDivisionCategory(guild, divisionData);
+				if (!channel.parent || !category || channel.parent.id !== category.id) {
 					return global.ephemeralReply(interaction, `Officer Channel must be a channel in the division category`);
 				}
 
-				return updateTrackerDivisionChannel(divisionData, 'officer_channel', channel);
+				return global.updateTrackerDivisionChannel(divisionData, [['officer_channel', channel]]);
 			}
 			case 'member-channel': {
-				let name = interaction.options.getString('name');
+				let divisionIdentifier = interaction.options.getString('name');
 				let channel = interaction.options.getChannel('channel') ?? interaction.channel;
 
 				let divisions = await global.getDivisionsFromTracker();
-				let divisionData = divisions[name];
+				let divisionData = divisions[divisionIdentifier];
 				if (typeof(divisionData) === 'undefined') {
-					return global.ephemeralReply(interaction, `${name} division is not defined on the tracker`);
+					return global.ephemeralReply(interaction, `Division ${divisionIdentifier} is not defined on the tracker`);
 				}
-				if (!channel.parent || channel.parent.name !== name) {
+				let category = global.getDivisionCategory(guild, divisionData);
+				if (!channel.parent || !category || channel.parent.id !== category.id) {
 					return global.ephemeralReply(interaction, `Member Channel must be a channel in the division category`);
 				}
 
-				return updateTrackerDivisionChannel(divisionData, 'member_channel', channel);
+				return global.updateTrackerDivisionChannel(divisionData, [['member_channel', channel]]);
+			}
+			case 'division-channel': {
+				let divisionIdentifier = interaction.options.getString('name');
+				let channel = interaction.options.getChannel('channel') ?? interaction.channel.parent;
+
+				let divisions = await global.getDivisionsFromTracker();
+				let divisionData = divisions[divisionIdentifier];
+				if (typeof(divisionData) === 'undefined') {
+					return global.ephemeralReply(interaction, `Division ${divisionIdentifier} is not defined on the tracker`);
+				}
+				if (!channel || channel.type !== ChannelType.GuildCategory) {
+					return global.ephemeralReply(interaction, 'Division Channel must be a category');
+				}
+
+				return global.updateTrackerDivisionChannel(divisionData, [['division_channel', channel]]);
 			}
 			case 'update-onboarding': {
 				return global.updateOnboarding(guild, interaction);
 			}
 			case 'convert': {
-				let name = interaction.options.getString('name');
+				let divisionIdentifier = interaction.options.getString('name');
 				let test = interaction.options.getBoolean('test');
 
 				let divisions = await global.getDivisionsFromTracker();
-				let divisionData = divisions[name];
+				let divisionData = divisions[divisionIdentifier];
 				if (typeof(divisionData) === 'undefined') {
-					return global.ephemeralReply(interaction, `${name} division is not defined on the tracker`);
+					return global.ephemeralReply(interaction, `Division ${divisionIdentifier} is not defined on the tracker`);
 				}
 
-				let category = guild.channels.cache.find(c => c.name === name && c.type === ChannelType.GuildCategory);
+				let category = global.getDivisionCategory(guild, divisionData);
 				if (!category) {
-					return global.ephemeralReply(interaction, `No category for ${name} found`);
+					return global.ephemeralReply(interaction, `No category for ${divisionData.name} found`);
 				}
 
 				const memberRole = guild.roles.cache.find(r => { return r.name == config.memberRole; });
@@ -366,14 +388,16 @@ module.exports = {
 					}
 				}
 
-				return global.ephemeralReply(interaction, `Conversion for ${name} complete`, false);
+				return global.ephemeralReply(interaction, `Conversion for ${divisionData.name} complete`, false);
 			}
 			case 'bulk-update': {
 				/*
 				const divisions = await global.getDivisionsFromTracker();
-				for (const divisionName in divisions) {
-					if (divisions.hasOwnProperty(divisionName)) {
-						let category = guild.channels.cache.find(c => c.name === divisionName && c.type === ChannelType.GuildCategory);
+				for (const divisionIdentifier in divisions) {
+					if (divisions.hasOwnProperty(divisionIdentifier)) {
+						const divisionData = divisions[divisionIdentifier];
+						const divisionName = divisionData.name;
+						let category = global.getDivisionCategory(guild, divisionData);
 						if (!category) {
 							await global.ephemeralReply(interaction, `Could not find category for ${divisionName}`, false);
 							continue;
