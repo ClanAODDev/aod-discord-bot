@@ -1655,12 +1655,16 @@ const fetchTimeout = (url, ms, { signal, ...options } = {}) => {
 var _divisions;
 var _lastDivisionsRefresh;
 
+function getDivisionIdentifier(division) {
+	return division.guid || division.slug;
+}
+
 function getDivisionsFromTracker() {
 	let promise = new Promise(async function(resolve, reject) {
 		let now = new Date();
 		if (_divisions && ((now - _lastDivisionsRefresh) < (60 * 1000))) {
 			//only refresh once per minute
-			resolve(_divisions);
+			return resolve(_divisions);
 		}
 		try {
 			let response = await fetchTimeout(`${config.trackerAPIURL}/divisions?include-shutdown&include-settings`, 1000, {
@@ -1687,16 +1691,25 @@ function getDivisionsFromTracker() {
 							//always_visible = division.settings.always_visible_in_discord;
 						}
 					}
-					_divisions[division.name] = {
+					const divisionIdentifier = getDivisionIdentifier(division);
+					if (!divisionIdentifier) {
+						console.log(`Ignoring division without a guid or slug: ${division.name}`);
+						continue;
+					}
+					_divisions[divisionIdentifier] = {
+						guid: division.guid,
+						name: division.name,
 						abbreviation: division.abbreviation,
 						slug: division.slug,
 						forum_app_id: division.forum_app_id,
+						division_channel: division.division_channel,
 						officer_channel: division.officer_channel,
+						member_channel: division.member_channel,
 						icon: division.icon,
 						always_visible: always_visible
 					};
 					if (division.leadership) {
-						_divisions[division.name].leadership = division.leadership;
+						_divisions[divisionIdentifier].leadership = division.leadership;
 					}
 				}
 			}
@@ -1710,13 +1723,46 @@ function getDivisionsFromTracker() {
 }
 global.getDivisionsFromTracker = getDivisionsFromTracker;
 
+function getDivisionForCategory(divisions, category) {
+	if (!category)
+		return;
+	const divisionList = Object.values(divisions || {});
+	return divisionList.find(division => division.division_channel === category.id) ||
+		divisionList.find(division =>
+			category.children.cache.has(division.officer_channel) ||
+			category.children.cache.has(division.member_channel)) ||
+		divisionList.find(division => division.name.toLowerCase() === category.name.toLowerCase());
+}
+global.getDivisionForCategory = getDivisionForCategory;
+
+function getDivisionCategory(guild, division) {
+	const divisionCategory = guild.channels.resolve(division.division_channel);
+	if (divisionCategory && divisionCategory.type === ChannelType.GuildCategory)
+		return divisionCategory;
+	const officerChannel = guild.channels.resolve(division.officer_channel);
+	if (officerChannel && officerChannel.parent)
+		return officerChannel.parent;
+	const memberChannel = guild.channels.resolve(division.member_channel);
+	if (memberChannel && memberChannel.parent)
+		return memberChannel.parent;
+	return guild.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name.toLowerCase() === division.name.toLowerCase());
+}
+global.getDivisionCategory = getDivisionCategory;
+
+function onboardingOptionHasRole(option) {
+	return option.roles.has(this);
+}
+
 function updateTrackerDivisionData(divisionData, data) {
 	let promise = new Promise(async function(resolve, reject) {
 		if (config.devMode === true) {
 			resolve();
 			return;
 		}
-		let response = await fetchTimeout(`${config.trackerAPIURL}/divisions/${divisionData.slug}`, 1000, {
+		const divisionIdentifier = getDivisionIdentifier(divisionData);
+		if (!divisionIdentifier)
+			return reject('Division does not have a guid or slug');
+		let response = await fetchTimeout(`${config.trackerAPIURL}/divisions/${encodeURIComponent(divisionIdentifier)}`, 1000, {
 			method: 'post',
 			body: JSON.stringify(data),
 			headers: {
@@ -1735,15 +1781,19 @@ function updateTrackerDivisionData(divisionData, data) {
 	return promise;
 }
 
-function updateTrackerDivisionChannel(divisionData, channelType, channel) {
+function updateTrackerDivisionChannel(divisionData, channels) {
 	let updates = {};
-	updates[channelType] = channel.id;
+	for (const [channelType, channel] of channels) {
+		if (channel)
+			updates[channelType] = channel.id;
+	}
+	if (Object.keys(updates).length === 0)
+		return Promise.resolve();
 
 	return updateTrackerDivisionData(divisionData, updates)
 		.then(function() {
-			if (channel) {
-				divisionData[channelType] = channel.id;
-			}
+			for (const [channelType, channelId] of Object.entries(updates))
+				divisionData[channelType] = channelId;
 		})
 		.catch(() => {});
 }
@@ -1780,23 +1830,22 @@ function updateOnboarding(guild, message) {
 		}
 		await guild.emojis.fetch();
 		let divisions = await getDivisionsFromTracker();
-		for (const divisionName in divisions) {
-			if (divisions.hasOwnProperty(divisionName)) {
-				const division = divisions[divisionName];
-				const lcName = divisionName.toLowerCase();
-				let divisionCategory = guild.channels.cache.find(c => (c.type == ChannelType.GuildCategory && c.name.toLowerCase() == lcName));
-				let divisionRole = guild.roles.cache.find(r => r.name == divisionName);
+		for (const divisionIdentifier in divisions) {
+			if (divisions.hasOwnProperty(divisionIdentifier)) {
+				const division = divisions[divisionIdentifier];
+				let divisionCategory = getDivisionCategory(guild, division);
+				let divisionRole = divisionCategory && guild.roles.cache.find(matchGuildRoleName, divisionCategory.name);
 				if (divisionCategory && divisionRole) {
 					let emoji = guild.emojis.cache.find(e => e.name == division.abbreviation);
 					let opt = {
-						title: divisionName,
+						title: division.name,
 						channels: divisionCategory.children.cache.map(c => c.id),
 						roles: [divisionRole.id],
 						emoji: (emoji ? `<:${emoji.identifier}>` : '')
 					};
 					opt.channels.push(divisionCategory.id);
 					if (existingPrompt) {
-						let existingOption = existingPrompt.options.find(p => p.title == divisionName);
+						let existingOption = existingPrompt.options.find(onboardingOptionHasRole, divisionRole.id);
 						if (existingOption) {
 							opt.id = existingOption.id;
 						}
@@ -1817,7 +1866,12 @@ function updateOnboarding(guild, message) {
 }
 global.updateOnboarding = updateOnboarding;
 
-async function addDivision(message, member, perm, guild, divisionName) {
+async function addDivision(message, member, perm, guild, divisionIdentifier) {
+	let divisions = await getDivisionsFromTracker();
+	let divisionData = divisions[divisionIdentifier];
+	if (!divisionData)
+		return ephemeralReply(message, `:warning: Division ${divisionIdentifier} is not defined on the tracker`);
+	let divisionName = divisionData.name;
 	let officerRoleName = divisionName + ' ' + config.discordOfficerSuffix;
 	let memberRoleName = divisionName + ' ' + config.discordMemberSuffix;
 	let divisionRoleName = divisionName;
@@ -1838,13 +1892,7 @@ async function addDivision(message, member, perm, guild, divisionName) {
 		return ephemeralReply(message, "Division role already exists.");
 
 	let prefix = simpleName;
-	let divisions = await getDivisionsFromTracker();
-	let divisionData = divisions[divisionName];
-	if (divisionData === undefined) {
-		await ephemeralReply(message, `:warning: ${divisionName} is not defined on the tracker`);
-	} else {
-		prefix = divisionData.abbreviation;
-	}
+	prefix = divisionData.abbreviation;
 
 	let divisionMembersChannel = prefix + '-members';
 	let divisionOfficersChannel = prefix + '-officers';
@@ -1982,10 +2030,12 @@ async function addDivision(message, member, perm, guild, divisionName) {
 		if (config.officerRole) {
 			addForumSyncMap(message, guild, config.officerRole, divisionName + ' ' + config.forumOfficerSuffix);
 		}
-		if (divisionData && officersChannel) {
-			await updateTrackerDivisionChannel(divisionData, 'officer_channel', officersChannel);
-			await updateTrackerDivisionChannel(divisionData, 'member_channel', membersChannel);
-		}
+
+		await updateTrackerDivisionChannel(divisionData, [
+			['division_channel', divisionCategory],
+			['officer_channel', officersChannel],
+			['member_channel', membersChannel]
+		]);
 
 		if (divisionData && divisionData.icon) {
 			await guild.emojis.fetch();
@@ -2006,20 +2056,17 @@ async function addDivision(message, member, perm, guild, divisionName) {
 }
 global.addDivision = addDivision;
 
-async function deleteDivision(message, member, perm, guild, divisionName) {
+async function deleteDivision(message, member, perm, guild, divisionIdentifier) {
+	let divisions = await getDivisionsFromTracker();
+	let divisionData = divisions[divisionIdentifier];
+	if (!divisionData)
+		return ephemeralReply(message, `:warning: Division ${divisionIdentifier} is not defined on the tracker`);
+	const divisionCategory = getDivisionCategory(guild, divisionData);
+	let divisionName = divisionCategory ? divisionCategory.name : divisionData.name;
 	let officerRoleName = divisionName + ' ' + config.discordOfficerSuffix;
 	let memberRoleName = divisionName + ' ' + config.discordMemberSuffix;
 	let divisionRoleName = divisionName;
 
-	let divisions = await getDivisionsFromTracker();
-	let divisionData = divisions[divisionName];
-	if (divisionData === undefined) {
-		await ephemeralReply(message, `:warning: ${divisionName} is not defined on the tracker`);
-	} else {
-		prefix = divisionData.abbreviation;
-	}
-
-	const divisionCategory = guild.channels.cache.find(c => { return (c.name == divisionName && c.type === ChannelType.GuildCategory); });
 	if (divisionCategory) {
 		if (config.protectedCategories.includes(divisionCategory.name))
 			return ephemeralReply(message, `${divisionName} is a protected category.`);
@@ -3192,6 +3239,11 @@ function doForumSync(message, member, guild, perm, doDaily) {
 		const guestRole = guild.roles.cache.find(r => { return r.name == config.guestRole; });
 		const memberRole = guild.roles.cache.find(r => { return r.name == config.memberRole; });
 		const notificationChannel = guild.channels.cache.find(c => { return c.name === config.globalNotificationChannel; });
+		const divisions = await getDivisionsFromTracker() || {};
+		const divisionIdentifiersByName = Object.values(divisions).reduce((result, division) => {
+			result[division.name.toLowerCase()] = getDivisionIdentifier(division);
+			return result;
+		}, {});
 		const reason = (message ? `Requested by ${getNameFromMessage(message)}` : 'Periodic Sync');
 		let adds = 0,
 			removes = 0,
@@ -3436,17 +3488,20 @@ function doForumSync(message, member, guild, perm, doDaily) {
 									}
 								} else {
 									if (isMemberRole) {
+										const divisionIdentifier = divisionIdentifiersByName[(forumUser.division || '').toLowerCase()];
 										if (forumUser.indexIsId) {
-											if (disconnected[forumUser.division] === undefined)
-												disconnected[forumUser.division] = 0;
-											disconnected[forumUser.division]++;
+											if (divisionIdentifier && disconnected[divisionIdentifier] === undefined)
+												disconnected[divisionIdentifier] = 0;
+											if (divisionIdentifier)
+												disconnected[divisionIdentifier]++;
 											total_disconnected++;
 											leftServer.push(`${u} (${forumUser.name} -- ${forumUser.division})`);
 											await setDiscordStatusForForumUser(forumUser, 'disconnected');
 										} else {
-											if (misses[forumUser.division] === undefined)
-												misses[forumUser.division] = 0;
-											misses[forumUser.division]++;
+											if (divisionIdentifier && misses[divisionIdentifier] === undefined)
+												misses[divisionIdentifier] = 0;
+											if (divisionIdentifier)
+												misses[divisionIdentifier]++;
 											total_misses++;
 											noAccount.push(`${u} (${forumUser.name} -- ${forumUser.division})`);
 											await setDiscordStatusForForumUser(forumUser, 'never_connected');
@@ -3534,13 +3589,13 @@ function doForumSync(message, member, guild, perm, doDaily) {
 
 		//notifications
 		if (doDaily) {
-			let divisions = await global.getDivisionsFromTracker();
-			for (const divisionName in divisions) {
-				if (divisions.hasOwnProperty(divisionName)) {
-					if (misses[divisionName] || disconnected[divisionName]) {
-						const divisionData = divisions[divisionName];
-						let division_misses = misses[divisionName] ?? 0;
-						let division_disconnected = disconnected[divisionName] ?? 0;
+			for (const divisionIdentifier in divisions) {
+				if (divisions.hasOwnProperty(divisionIdentifier)) {
+					const divisionData = divisions[divisionIdentifier];
+					const divisionName = divisionData.name;
+					if (misses[divisionIdentifier] || disconnected[divisionIdentifier]) {
+						let division_misses = misses[divisionIdentifier] ?? 0;
+						let division_disconnected = disconnected[divisionIdentifier] ?? 0;
 						let officer_channel = guild.channels.resolve(divisionData.officer_channel);
 						if (!officer_channel)
 							officer_channel = guild.channels.cache.find(c => c.name === divisionData.officer_channel && c.type === ChannelType.GuildText) ?? notificationChannel;
@@ -4891,7 +4946,8 @@ async function checkGuildEvent(event) {
 		return event.delete();
 	}
 	if (event.channel.parent) {
-		if (!divisions[event.channel.parent.name]) {
+		const division = getDivisionForCategory(divisions, event.channel.parent);
+		if (!division) {
 			if (perm < PERM_STAFF) {
 				await sendMessageToMember(event.creator, 'You do not have permission to create events outside your division.');
 				return event.delete();
@@ -4930,39 +4986,39 @@ client.on("guildDelete", guild => {
 
 //guildUnavailable handler
 client.on('guildUnavailable', guild => {
-    console.log(`Guild unavailable: ${guild.name} (id: ${guild.id})`);
+	console.log(`Guild unavailable: ${guild.name} (id: ${guild.id})`);
 });
 
 //guildAvailable handler
 client.on('guildAvailable', guild => {
-    console.log(`Guild available: ${guild.name} (id: ${guild.id})`);
+	console.log(`Guild available: ${guild.name} (id: ${guild.id})`);
 });
 
 //shardReconnecting handler
 client.on('shardReconnecting', (id) => {
-    console.log(`Shard ${id} connection reconnecting`);
+	console.log(`Shard ${id} connection reconnecting`);
 });
 
 //shardResume handler
 client.on('shardResume', (id, replayedEvents) => {
-    console.log(`Shard ${id} connection resumed; ${replayedEvents} events replayed`);
+	console.log(`Shard ${id} connection resumed; ${replayedEvents} events replayed`);
 });
 
 //shardReady handler
 client.on('shardReady', (id) => {
-    console.log(`Shard ${id} connection established`);
+	console.log(`Shard ${id} connection established`);
 });
 
 //shardError handler
 client.on('shardError', (error, id) => {
-    console.error(`Shard ${id} websocket error:`, error);
+	console.error(`Shard ${id} websocket error:`, error);
 });
 
 //shardDisconnect handler
 client.on('shardDisconnect', (event, id) => {
-    console.error(
-        `Shard ${id} connection permanently disconnected: ${event.code} ${event.reason}`
-    );
+	console.error(
+		`Shard ${id} connection permanently disconnected: ${event.code} ${event.reason}`
+	);
 });
 
 //common client error handler
