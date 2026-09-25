@@ -128,6 +128,17 @@ module.exports = {
 				if (!output) {
 					output = 'Error: No output';
 				}
+
+				const isDeploy = action === 'deploy' || action === 'deploy-with-force';
+				if (isDeploy && !!config.projects[name].supervisor) {
+					let supervisorOutput = await run('sudo', [
+						global.config.deployProjectScript,
+						name,
+						'restart-supervisor',
+						'--config', global.config.deployProjectConfig]);
+					output += `\n\nRestarting Supervisor...\n${supervisorOutput || 'Error: No output'}`;
+				}
+
 				return global.messageReply(interaction, `\`\`\`${output}\`\`\``);
 			}
 			case 'reload-config': {
