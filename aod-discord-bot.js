@@ -14,6 +14,7 @@ const {
 	GatewayIntentBits,
 	Partials,
 	ChannelType,
+	PermissionFlagsBits,
 	PermissionsBitField,
 	Collection,
 	InteractionType,
@@ -1096,11 +1097,9 @@ function commandPurge(message, member, cmd, args, guild, perm, isDM) {
 }
 
 var channelPermissionLevels = ['public', 'feed', 'guest', 'member', 'role', 'officer', 'mod', 'staff', 'admin'];
-var FlagSetVoiceChannelStatus = 1n << 48n; //FIXME Replace with officiel flag
 var stageModeratorFlags = [
 	PermissionsBitField.Flags.ManageChannels,
 	PermissionsBitField.Flags.MuteMembers,
-	PermissionsBitField.Flags.MoveMembers
 ];
 
 async function getChannelPermissions(guild, message, perm, level, type, divisionOfficerRole, additionalRole, targetMember) {
@@ -1124,15 +1123,16 @@ async function getChannelPermissions(guild, message, perm, level, type, division
 		let officerAllow = allow.concat([
 			PermissionsBitField.Flags.ManageMessages,
 			PermissionsBitField.Flags.ManageEvents,
+			PermissionsBitField.Flags.MoveMembers,
 			PermissionsBitField.Flags.CreateEvents,
 			PermissionsBitField.Flags.BypassSlowmode,
 			PermissionsBitField.Flags.PinMessages,
-			FlagSetVoiceChannelStatus
+			PermissionsBitField.Flags.SetVoiceChannelStatus
 		]);
 		if (type === 'stage')
 			officerAllow.push(...stageModeratorFlags);
 		let memberAllow = allow.concat([
-			FlagSetVoiceChannelStatus
+			PermissionsBitField.Flags.SetVoiceChannelStatus
 		]);
 
 		var permissions;
@@ -3891,13 +3891,57 @@ function processTimeStr(string) {
 }
 
 async function commandTest(message, member, cmd, args, guild, perm, isDM) {
-	//console.log("test:" + args.join(' '));
-	//message.reply("test: " + args.join(' '));
-	/*
-	let divisions = await getDivisionsFromTracker();
-	console.log(divisions);
-	message.reply('done');
-	*/
+/*
+	await guild.channels.fetch();
+
+	let changed = 0;
+
+	for (const channel of guild.channels.cache.values()) {
+		if (!channel.permissionOverwrites)
+			continue;
+
+		for (const overwrite of channel.permissionOverwrites.cache.values()) {
+			// Only role overwrites
+			if (overwrite.type !== OverwriteType.Role)
+				continue;
+
+			if (channel.type === ChannelType.GuildStageVoice)
+				continue;
+
+			const role = guild.roles.cache.get(overwrite.id);
+			if (!role)
+				continue;
+
+			if (!role.name.includes("Officer"))
+				continue;
+
+			const hasManageMessages =
+				overwrite.allow.has(PermissionFlagsBits.ManageMessages);
+			const hasMoveMembers =
+				overwrite.allow.has(PermissionFlagsBits.MoveMembers);
+
+			if (!hasManageMessages || hasMoveMembers)
+				continue;
+
+			console.log(
+				`Adding MoveMembers override: ` +
+				`${channel.name} -> ${role.name} (${role.id})`
+			);
+
+			await channel.permissionOverwrites.edit(
+				role, {
+					MoveMembers: true,
+				}, {
+					reason: `Adding MoveMembers override from role ${role.name}`,
+				}
+			);
+
+			changed++;
+		}
+	}
+
+	console.log(`Finished. Modified ${changed} permission overwrites.`);
+*/
 }
 
 //command definitions
