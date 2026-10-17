@@ -123,6 +123,7 @@ var globalNotificationChannel;
 
 //other globals
 global.lastForumSync = null;
+global.lastDependentRoleAudit = null;
 
 const client = new Client({
 	intents: [
@@ -4753,6 +4754,8 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
 var forumSyncTimer = null;
 var lastDate = null;
 
+var dependentRoleAuditTimer = null;
+
 var twitchMonitorTimer = null;
 var twitchAccessToken = null;
 var twitchTokenExpiry = 0;
@@ -4785,6 +4788,12 @@ function forumSyncTimerCallback() {
 			}
 		}
 	}
+}
+
+function dependentRoleAuditTimerCallback() {
+	global.lastDependentRoleAudit = new Date();
+	const guild = client.guilds.resolve(config.guildId);
+	auditDependentRoles(guild, null).catch(console.log);
 }
 
 async function getTwitchAccessToken() {
@@ -4921,6 +4930,12 @@ client.on('clientReady', async function() {
 	}
 	forumSyncTimerCallback();
 	forumSyncTimer = setInterval(forumSyncTimerCallback, config.forumSyncIntervalMS);
+
+	if (dependentRoleAuditTimer) {
+		clearInterval(dependentRoleAuditTimer);
+	}
+	dependentRoleAuditTimerCallback();
+	dependentRoleAuditTimer = setInterval(dependentRoleAuditTimerCallback, config.dependentRoleAuditIntervalMS || 3600000);
 
 	if (config.twitch?.clientId && config.twitch?.clientSecret && config.twitch?.channelName) {
 		if (twitchMonitorTimer) {
