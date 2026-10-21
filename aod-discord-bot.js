@@ -1667,17 +1667,20 @@ function getDivisionsFromTracker() {
 			return resolve(_divisions);
 		}
 		try {
-			let response = await fetchTimeout(`${config.trackerAPIURL}/divisions?include-shutdown&include-settings`, 1000, {
-				method: 'get',
-				headers: {
-					'User-Agent': 'Discord Bot',
-					'Accept': 'application/json',
-					'Authorization': `Bearer ${config.trackerAPIToken}`
-				}
-			}).catch(err => {
+			let response;
+			try {
+				response = await fetchTimeout(`${config.trackerAPIURL}/divisions?include-shutdown&include-settings`, 1000, {
+					method: 'get',
+					headers: {
+						'User-Agent': 'Discord Bot',
+						'Accept': 'application/json',
+						'Authorization': `Bearer ${config.trackerAPIToken}`
+					}
+				});
+			} catch (err) {
 				console.log(err);
 				return resolve(_divisions);
-			});
+			}
 			let body = await response.json();
 			if (body.data !== undefined) {
 				_divisions = {};
@@ -1775,6 +1778,8 @@ function updateTrackerDivisionData(divisionData, data) {
 			console.log(err);
 			return reject('Failed to update divsision data');
 		});
+		if (!response)
+			return;
 		await response.json(); //wait for content to finish
 		resolve();
 	});
@@ -4853,11 +4858,53 @@ async function twitchMonitorCallback() {
 	}
 }
 
+function getDivisionForMessageChannel(divisions, channel) {
+	let category;
+	if (channel.parent?.type === ChannelType.GuildCategory) {
+		category = channel.parent;
+	} else if (channel.parent?.parent?.type === ChannelType.GuildCategory) {
+		category = channel.parent.parent;
+	}
+	return category ? getDivisionForCategory(divisions, category) : undefined;
+}
+
 //messageDelete handler
-client.on('messageDelete', (message) => {
-	if (message.guildId && message.channel && message.content &&
-		!message.content.startsWith(config.prefix + 'login '))
-		console.log(`Deleted message from ${message.author.tag} in #${message.channel.name}: ${message.content}`);
+client.on('messageDelete', async (message) => {
+	if (!message.guildId || !message.channel ||
+		(message.content && message.content.startsWith(config.prefix + 'login ')))
+		return;
+
+	const author = message.author ? `${message.author.tag} (${message.author.id})` : 'Unknown author';
+	const authorMention = message.author ? `<@${message.author.id}>` : author;
+	const content = message.content || '[Message content unavailable]';
+	const logMessage = `Deleted message from ${author} in #${message.channel.name || message.channelId}\n${content}`;
+	const embed = {
+		color: 0xD9534F,
+		title: 'Message deleted',
+		description: content.length > 4096 ? `${content.slice(0, 4093)}...` : content,
+		fields: [
+			{ name: 'Author', value: authorMention, inline: true },
+			{ name: 'Channel', value: `<#${message.channelId}>`, inline: true }
+		],
+		timestamp: new Date().toISOString()
+	};
+
+	try {
+		const divisions = await getDivisionsFromTracker();
+		const division = getDivisionForMessageChannel(divisions, message.channel);
+		const officerChannel = division?.officer_channel && message.guild.channels.resolve(division.officer_channel);
+		if (officerChannel) {
+			await officerChannel.send({
+				embeds: [embed],
+				allowedMentions: { parse: [] }
+			});
+			return;
+		}
+	} catch (error) {
+		console.error(`Could not send deleted-message log to the division officer channel: ${error}`);
+	}
+
+	console.log(logMessage);
 });
 
 //channelDelete handler
