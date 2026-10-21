@@ -4868,6 +4868,35 @@ function getDivisionForMessageChannel(divisions, channel) {
 	return category ? getDivisionForCategory(divisions, category) : undefined;
 }
 
+const messageDeleteAuditCounts = new Map();
+
+async function findMessageDeleteExecutorId(message) {
+	await sleep(1000);
+	const auditLogs = await message.guild.fetchAuditLogs({ type: AuditLogEvent.MessageDelete, limit: 10 });
+	const now = Date.now();
+	for (const entry of auditLogs.entries.values()) {
+		if (entry.extra?.channel?.id !== message.channelId)
+			continue;
+		if (message.author && entry.targetId !== message.author.id)
+			continue;
+		const count = entry.extra.count;
+		const previousCount = messageDeleteAuditCounts.get(entry.id);
+		messageDeleteAuditCounts.set(entry.id, count);
+		if (messageDeleteAuditCounts.size > 500)
+			messageDeleteAuditCounts.delete(messageDeleteAuditCounts.keys().next().value);
+		const isNewDeletion = previousCount === undefined ?
+			now - entry.createdTimestamp < 10000 :
+			count > previousCount;
+		if (isNewDeletion)
+			return entry.executorId;
+	}
+}
+
+function isOfficerBelowSergeant(guild, member) {
+	return getPermissionLevelForMember(guild, member) < PERM_MOD &&
+		member.roles.cache.some(r => r.name.endsWith('Officer'));
+}
+
 //messageDelete handler
 client.on('messageDelete', async (message) => {
 	if (!message.guildId || !message.channel ||
@@ -4878,27 +4907,31 @@ client.on('messageDelete', async (message) => {
 	const authorMention = message.author ? `<@${message.author.id}>` : author;
 	const content = message.content || '[Message content unavailable]';
 	const logMessage = `Deleted message from ${author} in #${message.channel.name || message.channelId}\n${content}`;
-	const embed = {
-		color: 0xD9534F,
-		title: 'Message deleted',
-		description: content.length > 4096 ? `${content.slice(0, 4093)}...` : content,
-		fields: [
-			{ name: 'Author', value: authorMention, inline: true },
-			{ name: 'Channel', value: `<#${message.channelId}>`, inline: true }
-		],
-		timestamp: new Date().toISOString()
-	};
 
 	try {
 		const divisions = await getDivisionsFromTracker();
 		const division = getDivisionForMessageChannel(divisions, message.channel);
 		const officerChannel = division?.officer_channel && message.guild.channels.resolve(division.officer_channel);
 		if (officerChannel) {
-			await officerChannel.send({
-				embeds: [embed],
-				allowedMentions: { parse: [] }
-			});
-			return;
+			const executorId = await findMessageDeleteExecutorId(message);
+			const executor = executorId && await message.guild.members.fetch(executorId).catch(() => null);
+			if (executor && isOfficerBelowSergeant(message.guild, executor)) {
+				await officerChannel.send({
+					embeds: [{
+						color: 0xD9534F,
+						title: 'Message deleted',
+						description: content.length > 4096 ? `${content.slice(0, 4093)}...` : content,
+						fields: [
+							{ name: 'Author', value: authorMention, inline: true },
+							{ name: 'Deleted by', value: `${executor}`, inline: true },
+							{ name: 'Channel', value: `<#${message.channelId}>`, inline: true }
+						],
+						timestamp: new Date().toISOString()
+					}],
+					allowedMentions: { parse: [] }
+				});
+				return;
+			}
 		}
 	} catch (error) {
 		console.error(`Could not send deleted-message log to the division officer channel: ${error}`);
