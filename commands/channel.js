@@ -436,7 +436,12 @@ module.exports = {
 
 				await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 				await global.addChannel(guild, interaction, member, perm, name, type, level, category, officerRole, role);
-				return global.updateOnboarding(guild);
+				try {
+					return await global.updateOnboarding(guild);
+				} catch (error) {
+					return global.ephemeralReply(interaction, 'Channel created, but onboarding options could not be updated.');
+				}
+				break;
 			}
 			case 'delete': {
 				let channel = interaction.options.getChannel('channel');

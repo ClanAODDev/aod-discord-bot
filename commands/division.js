@@ -305,7 +305,12 @@ module.exports = {
 				return global.updateTrackerDivisionChannel(divisionData, [['division_channel', channel]]);
 			}
 			case 'update-onboarding': {
-				return global.updateOnboarding(guild, interaction);
+				try {
+					return await global.updateOnboarding(guild, interaction);
+				} catch (error) {
+					return global.ephemeralReply(interaction, 'Failed to update onboarding options.');
+				}
+				break;
 			}
 			case 'convert': {
 				let divisionIdentifier = interaction.options.getString('name');

@@ -1749,10 +1749,6 @@ function getDivisionCategory(guild, division) {
 }
 global.getDivisionCategory = getDivisionCategory;
 
-function onboardingOptionHasRole(option) {
-	return option.roles.has(this);
-}
-
 function updateTrackerDivisionData(divisionData, data) {
 	let promise = new Promise(async function(resolve, reject) {
 		if (config.devMode === true) {
@@ -1802,65 +1798,192 @@ global.updateTrackerDivisionChannel = updateTrackerDivisionChannel;
 
 function updateOnboarding(guild, message) {
 	let promise = new Promise(async function(resolve, reject) {
-		let onboarding = await guild.fetchOnboarding().catch(console.log);
-		let prompts = [];
-		let existingPrompt;
-		if (onboarding) {
-			for (let [id, p] of onboarding.prompts) {
-				if (p.title == config.onboardingTitle) {
-					existingPrompt = p;
-				} else {
-					//prompts.push(p.toJSON()); //FUCK YOU discord.js
-					//discord.js does not serialize the prompt options in to the proper format
+		try {
+			let onboarding;
+			try {
+				onboarding = await guild.fetchOnboarding();
+			} catch (error) {
+				console.error(`Could not fetch current onboarding for guild ${guild.id}; update cancelled`, error);
+				reject(error);
+				return;
+			}
+			let prompts = [];
+			await guild.emojis.fetch();
+			let divisions = await getDivisionsFromTracker();
+			let existingPrompts = onboarding ? [...onboarding.prompts.values()] : [];
+			let isManagedPromptTitle = function(title) {
+				if (title === config.onboardingTitle)
+					return true;
+				let suffix = `${config.onboardingTitle} (`;
+				if (!title.startsWith(suffix) || !title.endsWith(')'))
+					return false;
+				let index = Number(title.slice(suffix.length, -1));
+				return Number.isInteger(index) && index >= 2;
+			};
+			let getManagedPromptNumber = function(title) {
+				if (title === config.onboardingTitle)
+					return 1;
+				if (!isManagedPromptTitle(title))
+					return null;
+				let suffix = `${config.onboardingTitle} (`;
+				return Number(title.slice(suffix.length, -1));
+			};
+			let managedPrompts = existingPrompts.filter(prompt => isManagedPromptTitle(prompt.title));
+			let existingPromptByNumber = new Map(managedPrompts.map(prompt => [getManagedPromptNumber(prompt.title), prompt]));
+			let existingOptionByRole = new Map();
+			let existingOptionByTitle = new Map();
+			for (const prompt of managedPrompts) {
+				let promptNumber = getManagedPromptNumber(prompt.title);
+				for (const option of prompt.options.values()) {
+					if (!existingOptionByTitle.has(option.title))
+						existingOptionByTitle.set(option.title, { id: option.id, promptNumber: promptNumber });
+					for (const roleId of option.roles.keys()) {
+						if (!existingOptionByRole.has(roleId))
+							existingOptionByRole.set(roleId, { id: option.id, promptNumber: promptNumber });
+					}
 				}
 			}
-		}
 
-		let newPrompt = {
-			guildId: guild.id,
-			inOnboarding: true,
-			required: false,
-			singleSelect: false,
-			title: config.onboardingTitle,
-			type: GuildOnboardingPromptType.MultipleChoice,
-			options: []
-		};
-		if (existingPrompt) {
-			newPrompt.id = existingPrompt.id;
-		}
-		await guild.emojis.fetch();
-		let divisions = await getDivisionsFromTracker();
-		for (const divisionIdentifier in divisions) {
-			if (divisions.hasOwnProperty(divisionIdentifier)) {
-				const division = divisions[divisionIdentifier];
-				let divisionCategory = getDivisionCategory(guild, division);
-				let divisionRole = divisionCategory && guild.roles.cache.find(matchGuildRoleName, divisionCategory.name);
-				if (divisionCategory && divisionRole) {
-					let emoji = guild.emojis.cache.find(e => e.name == division.abbreviation);
-					let opt = {
-						title: division.name,
-						channels: divisionCategory.children.cache.map(c => c.id),
-						roles: [divisionRole.id],
-						emoji: (emoji ? `<:${emoji.identifier}>` : '')
-					};
-					opt.channels.push(divisionCategory.id);
-					if (existingPrompt) {
-						let existingOption = existingPrompt.options.find(onboardingOptionHasRole, divisionRole.id);
+			let gameOptions = [];
+			for (const divisionIdentifier in divisions) {
+				if (divisions.hasOwnProperty(divisionIdentifier)) {
+					const division = divisions[divisionIdentifier];
+					let divisionCategory = getDivisionCategory(guild, division);
+					let divisionRole = divisionCategory && guild.roles.cache.find(matchGuildRoleName, divisionCategory.name);
+					if (divisionCategory && divisionRole) {
+						let emoji = guild.emojis.cache.find(e => e.name == division.abbreviation);
+						let opt = {
+							title: division.name,
+							channels: divisionCategory.children.cache.map(c => c.id),
+							roles: [divisionRole.id],
+							emoji: (emoji ? `<:${emoji.identifier}>` : '')
+						};
+						opt.channels.push(divisionCategory.id);
+						let existingOption = existingOptionByRole.get(divisionRole.id) || existingOptionByTitle.get(division.name);
 						if (existingOption) {
 							opt.id = existingOption.id;
+							opt.existingPromptNumber = existingOption.promptNumber;
 						}
+						gameOptions.push(opt);
 					}
-					newPrompt.options.push(opt);
 				}
 			}
-		}
-		prompts.push(newPrompt);
+			let sortGameOptions = function(options) {
+				options.sort((a, b) => a.title.localeCompare(b.title, 'en', { sensitivity: 'base' }) || a.title.localeCompare(b.title, 'en') || a.roles[0].localeCompare(b.roles[0]));
+			};
+			sortGameOptions(gameOptions);
+			if (gameOptions.length === 0) {
+				console.log(`No eligible games found for guild ${guild.id}; update cancelled to preserve existing onboarding`);
+				if (message)
+					await ephemeralReply(message, ':warning: No eligible games were found; existing onboarding was left unchanged.');
+				resolve();
+				return;
+			}
 
-		await guild.editOnboarding({ prompts: prompts }).catch(console.log);
-		if (message) {
-			await ephemeralReply(message, "Updated onboarding options");
+			const maxOptions = 12;
+			let otherPreJoinPromptCount = existingPrompts.filter(prompt => !isManagedPromptTitle(prompt.title) && prompt.inOnboarding).length;
+			let availablePreJoinPromptSlots = Math.max(0, 4 - otherPreJoinPromptCount);
+			let optionGroups = new Map();
+			let movedOptions = [];
+			for (const option of gameOptions) {
+				if (option.existingPromptNumber) {
+					if (!optionGroups.has(option.existingPromptNumber))
+						optionGroups.set(option.existingPromptNumber, []);
+					optionGroups.get(option.existingPromptNumber).push(option);
+				}
+			}
+			let assignToOpenGroup = function(option, excludedPromptNumber) {
+				let promptNumbers = [...optionGroups.keys()].sort((a, b) => a - b);
+				let promptNumber = promptNumbers.find(number => number !== excludedPromptNumber && optionGroups.get(number).length < maxOptions);
+				if (!promptNumber) {
+					promptNumber = Math.max(0, ...promptNumbers) + 1;
+					optionGroups.set(promptNumber, []);
+				}
+				optionGroups.get(promptNumber).push(option);
+				return promptNumber;
+			};
+			for (const option of gameOptions) {
+				if (!option.existingPromptNumber)
+					assignToOpenGroup(option);
+			}
+			let existingPromptNumbers = [...optionGroups.keys()].sort((a, b) => a - b);
+			for (const promptNumber of existingPromptNumbers) {
+				let options = optionGroups.get(promptNumber);
+				sortGameOptions(options);
+				while (options.length > maxOptions) {
+					let overflow = options.pop();
+					let destinationPromptNumber = assignToOpenGroup(overflow, promptNumber);
+					if (overflow.existingPromptNumber && overflow.existingPromptNumber !== destinationPromptNumber) {
+						movedOptions.push({ title: overflow.title, fromPrompt: overflow.existingPromptNumber, toPrompt: destinationPromptNumber });
+					}
+				}
+			}
+			for (const options of optionGroups.values())
+				sortGameOptions(options);
+			let orderedPromptNumbers = [...optionGroups.keys()].filter(number => optionGroups.get(number).length > 0).sort((a, b) => a - b);
+			let managedPromptUpdates = [];
+			for (let slot = 0; slot < orderedPromptNumbers.length; slot++) {
+				let promptNumber = orderedPromptNumbers[slot];
+				let title = promptNumber === 1 ? config.onboardingTitle : `${config.onboardingTitle} (${promptNumber})`;
+				let prompt = {
+					guildId: guild.id,
+					inOnboarding: slot < availablePreJoinPromptSlots,
+					required: false,
+					singleSelect: false,
+					title: title,
+					type: GuildOnboardingPromptType.MultipleChoice,
+					options: optionGroups.get(promptNumber).map(option => {
+						let { existingPromptNumber, ...promptOption } = option;
+						return promptOption;
+					})
+				};
+				let existingPrompt = existingPromptByNumber.get(promptNumber);
+				if (existingPrompt)
+					prompt.id = existingPrompt.id;
+				managedPromptUpdates.push(prompt);
+			}
+
+			prompts.push(...managedPromptUpdates);
+			for (const prompt of existingPrompts) {
+				if (isManagedPromptTitle(prompt.title))
+					continue;
+				prompts.push({
+					id: prompt.id,
+					title: prompt.title,
+					singleSelect: prompt.singleSelect,
+					required: prompt.required,
+					inOnboarding: prompt.inOnboarding,
+					type: prompt.type,
+					options: [...prompt.options.values()].map(option => ({
+						id: option.id,
+						title: option.title,
+						description: option.description,
+						channels: [...option.channels.keys()],
+						roles: [...option.roles.keys()],
+						emoji: option.emoji ? {
+							id: option.emoji.id,
+							name: option.emoji.name,
+							animated: option.emoji.animated
+						} : null
+					}))
+				});
+			}
+
+			try {
+				await guild.editOnboarding({ prompts: prompts });
+			} catch (error) {
+				console.error("Failed to update onboarding", error);
+				reject(error);
+				return;
+			}
+			if (message) {
+				await ephemeralReply(message, "Updated onboarding options");
+			}
+			resolve();
+		} catch (error) {
+			console.error(error);
+			reject(error);
 		}
-		resolve();
 	});
 	return promise;
 }
@@ -2046,7 +2169,12 @@ async function addDivision(message, member, perm, guild, divisionIdentifier) {
 			}
 		}
 
-		await updateOnboarding(guild, message);
+		try {
+			await updateOnboarding(guild, message);
+		} catch (error) {
+			console.error(`Failed to update onboarding after adding division ${divisionName}`, error);
+			return ephemeralReply(message, `${divisionName} was added, but onboarding options could not be updated.`);
+		}
 
 		return ephemeralReply(message, `${divisionName} division added`);
 	} catch (error) {
@@ -3891,57 +4019,57 @@ function processTimeStr(string) {
 }
 
 async function commandTest(message, member, cmd, args, guild, perm, isDM) {
-/*
-	await guild.channels.fetch();
+	/*
+		await guild.channels.fetch();
 
-	let changed = 0;
+		let changed = 0;
 
-	for (const channel of guild.channels.cache.values()) {
-		if (!channel.permissionOverwrites)
-			continue;
-
-		for (const overwrite of channel.permissionOverwrites.cache.values()) {
-			// Only role overwrites
-			if (overwrite.type !== OverwriteType.Role)
+		for (const channel of guild.channels.cache.values()) {
+			if (!channel.permissionOverwrites)
 				continue;
 
-			if (channel.type === ChannelType.GuildStageVoice)
-				continue;
+			for (const overwrite of channel.permissionOverwrites.cache.values()) {
+				// Only role overwrites
+				if (overwrite.type !== OverwriteType.Role)
+					continue;
 
-			const role = guild.roles.cache.get(overwrite.id);
-			if (!role)
-				continue;
+				if (channel.type === ChannelType.GuildStageVoice)
+					continue;
 
-			if (!role.name.includes("Officer"))
-				continue;
+				const role = guild.roles.cache.get(overwrite.id);
+				if (!role)
+					continue;
 
-			const hasManageMessages =
-				overwrite.allow.has(PermissionFlagsBits.ManageMessages);
-			const hasMoveMembers =
-				overwrite.allow.has(PermissionFlagsBits.MoveMembers);
+				if (!role.name.includes("Officer"))
+					continue;
 
-			if (!hasManageMessages || hasMoveMembers)
-				continue;
+				const hasManageMessages =
+					overwrite.allow.has(PermissionFlagsBits.ManageMessages);
+				const hasMoveMembers =
+					overwrite.allow.has(PermissionFlagsBits.MoveMembers);
 
-			console.log(
-				`Adding MoveMembers override: ` +
-				`${channel.name} -> ${role.name} (${role.id})`
-			);
+				if (!hasManageMessages || hasMoveMembers)
+					continue;
 
-			await channel.permissionOverwrites.edit(
-				role, {
-					MoveMembers: true,
-				}, {
-					reason: `Adding MoveMembers override from role ${role.name}`,
-				}
-			);
+				console.log(
+					`Adding MoveMembers override: ` +
+					`${channel.name} -> ${role.name} (${role.id})`
+				);
 
-			changed++;
+				await channel.permissionOverwrites.edit(
+					role, {
+						MoveMembers: true,
+					}, {
+						reason: `Adding MoveMembers override from role ${role.name}`,
+					}
+				);
+
+				changed++;
+			}
 		}
-	}
 
-	console.log(`Finished. Modified ${changed} permission overwrites.`);
-*/
+		console.log(`Finished. Modified ${changed} permission overwrites.`);
+	*/
 }
 
 //command definitions
