@@ -18,7 +18,10 @@ module.exports = {
 			.addStringOption(option => option.setName('name').setDescription('Division name or abbreviation').setRequired(true)))
 		.addSubcommand(command => command.setName('reports').setDescription('Run a Tracker report')
 			.addStringOption(option => option.setName('name').setDescription('Report name').setRequired(true)
-				.addChoices({ name: 'SGT Trainings', value: 'sgt-training' }, ))),
+				.addChoices(
+					{ name: 'SGT Trainings', value: 'sgt-training' },
+					{ name: 'Outstanding Tickets (MSgt+)', value: 'outstanding-tickets' },
+				))),
 	help: true,
 	checkPerm(perm, commandName, parentName) {
 		if (parentName === 'search') {
@@ -46,6 +49,7 @@ module.exports = {
 		let trackerCommand;
 		let field;
 		let value;
+		let discordId;
 		if (commandGroup === null) {
 			switch (subCommand) {
 				case 'division': {
@@ -56,6 +60,7 @@ module.exports = {
 				case 'reports': {
 					trackerCommand = 'reports';
 					value = interaction.options.getString('name');
+					discordId = interaction.user.id;
 					break;
 				}
 			}
@@ -81,6 +86,8 @@ module.exports = {
 			if (field)
 				trackerURL.searchParams.append('field', field);
 			trackerURL.searchParams.append('value', value);
+			if (discordId)
+				trackerURL.searchParams.append('discord_id', discordId);
 			let response = await fetch(trackerURL, {
 				method: 'GET',
 				headers: {
